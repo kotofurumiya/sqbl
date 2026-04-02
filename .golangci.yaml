@@ -1,0 +1,20 @@
+version: "2"
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - revive
+    - misspell
+    - gocritic
+    - godot
+
+  settings:
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: exported
+          severity: warning
+          disabled: false
+    godot:
+      scope: toplevel
