@@ -133,6 +133,12 @@ golangci-lint run
 go test ./...
 ```
 
+### Benchmark
+
+```shell
+go test ./benchmark/ -bench=. -benchmem
+```
+
 ## License
 
 MIT License. See [LICENSE.md](LICENSE.md).
