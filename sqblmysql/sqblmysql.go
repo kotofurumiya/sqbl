@@ -7,8 +7,8 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-func newSqblBuilder() *builder.SqlSelectBuilder {
-	b := &builder.SqlSelectBuilder{}
+func newSqblBuilder() builder.SqlSelectBuilder {
+	var b builder.SqlSelectBuilder
 	return b.Dialect(&dialect.MysqlDialect{})
 }
 
@@ -17,7 +17,7 @@ func newSqblBuilder() *builder.SqlSelectBuilder {
 //	sqblmysql.From("users")
 //	sqblmysql.From(sqblmysql.As("users", "u"))
 //	sqblmysql.From(sqblmysql.From("orders").Select("user_id"))
-func From(table any) *builder.SqlSelectBuilder {
+func From(table any) builder.SqlSelectBuilder {
 	return newSqblBuilder().From(table)
 }
 
@@ -26,55 +26,55 @@ func From(table any) *builder.SqlSelectBuilder {
 //
 //	sqblmysql.Select("id", "name")
 //	sqblmysql.Select(sqblmysql.As("COUNT(*)", "total"))
-func Select(columns ...any) *builder.SqlSelectBuilder {
+func Select(columns ...any) builder.SqlSelectBuilder {
 	return newSqblBuilder().Select(columns...)
 }
 
 // InsertInto starts an INSERT query targeting the given table.
 //
 //	sqblmysql.InsertInto("users").Columns("name", "email").Values(sqbl.P(1), sqbl.P(2))
-func InsertInto(table string) *builder.SqlInsertBuilder {
-	b := &builder.SqlInsertBuilder{}
+func InsertInto(table string) builder.SqlInsertBuilder {
+	var b builder.SqlInsertBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).Into(table)
 }
 
 // Update starts an UPDATE query targeting the given table.
 //
 //	sqblmysql.Update("users").Set("name", sqbl.P(1)).Where(sqblmysql.Eq("id", sqbl.P(2)))
-func Update(table string) *builder.SqlUpdateBuilder {
-	b := &builder.SqlUpdateBuilder{}
+func Update(table string) builder.SqlUpdateBuilder {
+	var b builder.SqlUpdateBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).Table(table)
 }
 
 // DeleteFrom starts a DELETE query targeting the given table.
 //
 //	sqblmysql.DeleteFrom("users").Where(sqblmysql.Eq("id", sqbl.P(1)))
-func DeleteFrom(table string) *builder.SqlDeleteBuilder {
-	b := &builder.SqlDeleteBuilder{}
+func DeleteFrom(table string) builder.SqlDeleteBuilder {
+	var b builder.SqlDeleteBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).From(table)
 }
 
 // CreateTable starts a CREATE TABLE builder for the given table.
 //
 //	sqblmysql.CreateTable("users").Column("id", "BIGINT", "NOT NULL").PrimaryKey("id")
-func CreateTable(table string) *builder.SqlCreateTableBuilder {
-	b := &builder.SqlCreateTableBuilder{}
+func CreateTable(table string) builder.SqlCreateTableBuilder {
+	var b builder.SqlCreateTableBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).Table(table)
 }
 
 // CreateIndex starts a CREATE INDEX builder for the given index name.
 //
 //	sqblmysql.CreateIndex("idx_users_email").On("users").Columns("email").Unique()
-func CreateIndex(name string) *builder.SqlCreateIndexBuilder {
-	b := &builder.SqlCreateIndexBuilder{}
+func CreateIndex(name string) builder.SqlCreateIndexBuilder {
+	var b builder.SqlCreateIndexBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).Name(name)
 }
 
 // DropTable starts a DROP TABLE builder for the given table.
 //
 //	sqblmysql.DropTable("users").IfExists()
-func DropTable(table string) *builder.SqlDropTableBuilder {
-	b := &builder.SqlDropTableBuilder{}
+func DropTable(table string) builder.SqlDropTableBuilder {
+	var b builder.SqlDropTableBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).Table(table)
 }
 
@@ -82,8 +82,8 @@ func DropTable(table string) *builder.SqlDropTableBuilder {
 // MySQL requires specifying the table with On().
 //
 //	sqblmysql.DropIndex("idx_users_email").On("users")
-func DropIndex(name string) *builder.SqlDropIndexBuilder {
-	b := &builder.SqlDropIndexBuilder{}
+func DropIndex(name string) builder.SqlDropIndexBuilder {
+	var b builder.SqlDropIndexBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).Name(name)
 }
 
@@ -91,7 +91,7 @@ func DropIndex(name string) *builder.SqlDropIndexBuilder {
 //
 //	sqblmysql.AlterTable("users").AddColumn("bio", "TEXT")
 //	sqblmysql.AlterTable("users").RenameColumn("fullname", "name")
-func AlterTable(table string) *builder.SqlAlterTableBuilder {
-	b := &builder.SqlAlterTableBuilder{}
+func AlterTable(table string) builder.SqlAlterTableBuilder {
+	var b builder.SqlAlterTableBuilder
 	return b.Dialect(&dialect.MysqlDialect{}).Table(table)
 }

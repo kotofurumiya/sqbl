@@ -1,67 +1,68 @@
 package dialect
 
-import "strings"
+import (
+	"bytes"
+	"strings"
+)
 
 // MysqlDialect implements the Dialect interface for MySQL.
 type MysqlDialect struct{}
 
 var _ SqlDialect = &MysqlDialect{}
 
-// Quote wraps a single identifier part in backticks.
-// It also escapes any existing backticks within the identifier.
+// Quote writes a single identifier part wrapped in backticks into buf.
+// Any existing backtick characters within the identifier are escaped by doubling.
 //
 // Examples (MySQL):
 //
 //	users      -> `users`
 //	my`table   -> `my``table`
-func (m *MysqlDialect) Quote(str string) string {
-	escaped := strings.ReplaceAll(str, "`", "``")
-	return "`" + escaped + "`"
+func (m *MysqlDialect) Quote(buf *bytes.Buffer, s string) {
+	if strings.IndexByte(s, '`') < 0 {
+		buf.WriteByte('`')
+		buf.WriteString(s)
+		buf.WriteByte('`')
+		return
+	}
+	WriteQuotedPart(buf, s, '`')
 }
 
-// QuoteIdentifier quotes a full identifier (possibly dot-separated) by
-// splitting it and quoting each part individually.
+// QuoteIdentifier writes a full identifier (possibly dot-separated) into buf,
+// quoting each part individually.
 //
 // Examples (MySQL):
 //
 //	users          -> `users`
 //	public.users   -> `public`.`users`
 //	db.sch.table   -> `db`.`sch`.`table`
-func (m *MysqlDialect) QuoteIdentifier(name string) string {
-	parts := strings.Split(name, ".")
-	for i, part := range parts {
-		parts[i] = m.Quote(part)
+func (m *MysqlDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
+	if strings.IndexByte(name, '.') < 0 {
+		m.Quote(buf, name)
+		return
 	}
-	return strings.Join(parts, ".")
+	QuoteIdentifierParts(buf, name, '`')
 }
 
-// PlaceholderPositional returns the positional bind parameter string.
-//
-// Examples:
-//
-//	-> ?
-func (m *MysqlDialect) PlaceholderPositional() string {
-	return "?"
+// PlaceholderPositional writes the positional bind parameter "?" into buf.
+func (m *MysqlDialect) PlaceholderPositional(buf *bytes.Buffer) {
+	buf.WriteByte('?')
 }
 
-// PlaceholderIndexed returns the indexed bind parameter string for the given index.
+// PlaceholderIndexed writes the indexed bind parameter "?" into buf.
 // MySQL uses ? for all indexed placeholders, ignoring the index.
-//
-// Examples:
-//
-//	1 -> ?, 2 -> ?
-func (m *MysqlDialect) PlaceholderIndexed(_ int) string {
-	return "?"
+func (m *MysqlDialect) PlaceholderIndexed(buf *bytes.Buffer, _ int) {
+	buf.WriteByte('?')
 }
 
-// Bool converts a boolean value to its MySQL SQL representation.
+// Bool writes the SQL boolean literal for b into buf.
 //
 // Examples:
 //
 //	true -> TRUE, false -> FALSE
-func (m *MysqlDialect) Bool(b bool) string {
+func (m *MysqlDialect) Bool(buf *bytes.Buffer, b bool) {
 	if b {
-		return "TRUE"
+		buf.WriteString("TRUE")
+	} else {
+		buf.WriteString("FALSE")
 	}
-	return "FALSE"
 }

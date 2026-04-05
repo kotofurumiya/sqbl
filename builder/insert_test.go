@@ -8,8 +8,8 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newInsertBuilder() *builder.SqlInsertBuilder {
-	return (&builder.SqlInsertBuilder{}).Dialect(&dialect.SimpleDialect{})
+func newInsertBuilder() builder.SqlInsertBuilder {
+	return (builder.SqlInsertBuilder{}).Dialect(&dialect.SimpleDialect{})
 }
 
 func TestSqlInsertBuilder_SingleRow(t *testing.T) {

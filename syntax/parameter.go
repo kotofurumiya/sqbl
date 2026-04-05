@@ -1,6 +1,10 @@
 package syntax
 
-import "github.com/kotofurumiya/sqbl/dialect"
+import (
+	"bytes"
+
+	"github.com/kotofurumiya/sqbl/dialect"
+)
 
 type paramMode int
 
@@ -20,20 +24,20 @@ type Parameter struct {
 
 var _ SqlFragment = Parameter{}
 
-// ToSqlWithDialect renders the parameter as a placeholder string using the given dialect.
+// AppendSQL implements SqlFragment. Writes the parameter placeholder into buf.
 // positional mode: d.PlaceholderPositional() (e.g. ?)
 // indexed mode: d.PlaceholderIndexed(p.index) (e.g. $1)
 // named mode: p.name as-is (e.g. :status).
-func (p Parameter) ToSqlWithDialect(d dialect.SqlDialect) string {
+func (p Parameter) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	switch p.mode {
 	case paramPositional:
-		return d.PlaceholderPositional()
+		d.PlaceholderPositional(buf)
 	case paramIndexed:
-		return d.PlaceholderIndexed(p.index)
+		d.PlaceholderIndexed(buf, p.index)
 	case paramNamed:
-		return p.name
+		buf.WriteString(p.name)
 	default:
-		return d.PlaceholderPositional()
+		d.PlaceholderPositional(buf)
 	}
 }
 

@@ -1,7 +1,10 @@
 package builder
 
 import (
+	"bytes"
+
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 )
 
 // SqlDropIndexBuilder constructs a DROP INDEX statement using a fluent method chain.
@@ -16,49 +19,55 @@ type SqlDropIndexBuilder struct {
 	on       string // required for MySQL: DROP INDEX name ON table
 }
 
-var _ SqlBuilder = (*SqlDropIndexBuilder)(nil)
+var _ SqlBuilder = SqlDropIndexBuilder{}
 
 // ToSql renders the DROP INDEX statement with a trailing semicolon.
-func (b *SqlDropIndexBuilder) ToSql() string {
-	return b.renderSQL(b.dialect) + ";"
+func (b SqlDropIndexBuilder) ToSql() string {
+	buf := sqlbuf.GetStringBuffer()
+	b.renderSQL(buf, b.dialect)
+	buf.WriteByte(';')
+	s := buf.String()
+	sqlbuf.PutStringBuffer(buf)
+	return s
 }
 
 // ToSqlWithDialect renders the DROP INDEX statement using the given dialect, without a trailing semicolon.
-func (b *SqlDropIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	return b.renderSQL(d)
+func (b SqlDropIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	buf := sqlbuf.GetStringBuffer()
+	b.renderSQL(buf, d)
+	s := buf.String()
+	sqlbuf.PutStringBuffer(buf)
+	return s
 }
 
-func (b *SqlDropIndexBuilder) renderSQL(d dialect.SqlDialect) string {
+func (b SqlDropIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	_, isMysql := d.(*dialect.MysqlDialect)
 
-	drop := "DROP INDEX"
+	buf.WriteString("DROP INDEX")
 	if b.ifExists && !isMysql {
-		drop += " IF EXISTS"
+		buf.WriteString(" IF EXISTS")
 	}
 	if b.name != "" {
-		drop += " " + d.QuoteIdentifier(b.name)
+		buf.WriteByte(' ')
+		d.QuoteIdentifier(buf, b.name)
 	}
-
-	// MySQL requires ON table clause
+	// MySQL requires ON table clause.
 	if isMysql && b.on != "" {
-		drop += " ON " + d.QuoteIdentifier(b.on)
+		buf.WriteString(" ON ")
+		d.QuoteIdentifier(buf, b.on)
 	}
-
-	return drop
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b *SqlDropIndexBuilder) Dialect(d dialect.SqlDialect) *SqlDropIndexBuilder {
-	b2 := *b
-	b2.dialect = d
-	return &b2
+func (b SqlDropIndexBuilder) Dialect(d dialect.SqlDialect) SqlDropIndexBuilder {
+	b.dialect = d
+	return b
 }
 
 // Name sets the index name.
-func (b *SqlDropIndexBuilder) Name(name string) *SqlDropIndexBuilder {
-	b2 := *b
-	b2.name = name
-	return &b2
+func (b SqlDropIndexBuilder) Name(name string) SqlDropIndexBuilder {
+	b.name = name
+	return b
 }
 
 // IfExists adds IF EXISTS to the statement (PostgreSQL and SQLite only).
@@ -66,10 +75,9 @@ func (b *SqlDropIndexBuilder) Name(name string) *SqlDropIndexBuilder {
 //
 //	sqblpg.DropIndex("idx_users_email").IfExists()
 //	// DROP INDEX IF EXISTS "idx_users_email"
-func (b *SqlDropIndexBuilder) IfExists() *SqlDropIndexBuilder {
-	b2 := *b
-	b2.ifExists = true
-	return &b2
+func (b SqlDropIndexBuilder) IfExists() SqlDropIndexBuilder {
+	b.ifExists = true
+	return b
 }
 
 // On sets the table name for the DROP INDEX statement (MySQL only).
@@ -77,8 +85,7 @@ func (b *SqlDropIndexBuilder) IfExists() *SqlDropIndexBuilder {
 //
 //	sqblmysql.DropIndex("idx_users_email").On("users")
 //	// DROP INDEX `idx_users_email` ON `users`
-func (b *SqlDropIndexBuilder) On(table string) *SqlDropIndexBuilder {
-	b2 := *b
-	b2.on = table
-	return &b2
+func (b SqlDropIndexBuilder) On(table string) SqlDropIndexBuilder {
+	b.on = table
+	return b
 }

@@ -7,8 +7,8 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-func newDropTableBuilder(d dialect.SqlDialect) *builder.SqlDropTableBuilder {
-	return (&builder.SqlDropTableBuilder{}).Dialect(d).Table("users")
+func newDropTableBuilder(d dialect.SqlDialect) builder.SqlDropTableBuilder {
+	return (builder.SqlDropTableBuilder{}).Dialect(d).Table("users")
 }
 
 func TestSqlDropTableBuilder_Basic(t *testing.T) {

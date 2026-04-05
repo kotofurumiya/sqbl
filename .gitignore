@@ -1,4 +1,5 @@
 .DS_Store
 Thumds.db
 
-coverage.out
+benchmark.test
+*.out

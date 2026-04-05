@@ -8,8 +8,8 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newCreateTableBuilder() *builder.SqlCreateTableBuilder {
-	return (&builder.SqlCreateTableBuilder{}).Dialect(&dialect.SimpleDialect{})
+func newCreateTableBuilder() builder.SqlCreateTableBuilder {
+	return (builder.SqlCreateTableBuilder{}).Dialect(&dialect.SimpleDialect{})
 }
 
 func TestSqlCreateTableBuilder_ImplementsSqlBuilder(t *testing.T) {

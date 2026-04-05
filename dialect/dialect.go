@@ -2,11 +2,14 @@
 // that handle database-specific SQL differences such as quoting and placeholders.
 package dialect
 
+import "bytes"
+
 // SqlDialect abstracts database-specific SQL differences such as identifier quoting,
 // bind parameter placeholders, and boolean literal syntax.
 type SqlDialect interface {
-	// Quote wraps a single identifier part in the dialect-specific quote character.
-	// It also escapes any existing quote characters within the identifier.
+	// Quote writes a single identifier part wrapped in the dialect-specific quote
+	// character directly into buf. Any existing quote characters within the identifier
+	// are escaped.
 	//
 	// Examples (MySQL):
 	//   users      -> `users`
@@ -15,10 +18,10 @@ type SqlDialect interface {
 	// Examples (PostgreSQL):
 	//   users      -> "users"
 	//   my"table   -> "my""table"
-	Quote(str string) string
+	Quote(buf *bytes.Buffer, s string)
 
-	// QuoteIdentifier quotes a full identifier (possibly dot-separated) by
-	// splitting it and quoting each part individually.
+	// QuoteIdentifier writes a full identifier (possibly dot-separated) into buf,
+	// quoting each part individually.
 	//
 	// Examples (MySQL):
 	//   users          -> `users`
@@ -29,25 +32,25 @@ type SqlDialect interface {
 	//   users          -> "users"
 	//   public.users   -> "public"."users"
 	//   db.sch.table   -> "db"."sch"."table"
-	QuoteIdentifier(str string) string
+	QuoteIdentifier(buf *bytes.Buffer, name string)
 
-	// PlaceholderPositional returns the positional bind parameter string.
+	// PlaceholderPositional writes the positional bind parameter into buf.
 	// Used for P() (no index, no name).
 	//
 	// Examples (PostgreSQL): ?
 	// Examples (MySQL):      ?
-	PlaceholderPositional() string
+	PlaceholderPositional(buf *bytes.Buffer)
 
-	// PlaceholderIndexed returns the indexed bind parameter string for the given index.
+	// PlaceholderIndexed writes the indexed bind parameter into buf.
 	// Index starts from 1.
 	//
 	// Examples (PostgreSQL): 1 -> $1, 2 -> $2
 	// Examples (MySQL):      1 -> ?,  2 -> ?
-	PlaceholderIndexed(index int) string
+	PlaceholderIndexed(buf *bytes.Buffer, index int)
 
-	// Bool converts a boolean value to its dialect-specific SQL representation.
+	// Bool writes the dialect-specific SQL representation of a boolean value into buf.
 	//
 	// Examples (PostgreSQL): true -> TRUE,  false -> FALSE
 	// Examples (SQLite):     true -> 1,     false -> 0
-	Bool(b bool) string
+	Bool(buf *bytes.Buffer, b bool)
 }

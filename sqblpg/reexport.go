@@ -7,7 +7,7 @@ import "github.com/kotofurumiya/sqbl/syntax"
 //	sqblpg.As("users", "u")                   // users AS u
 //	sqblpg.As("SUM(p.amount)", "total_spent") // SUM(p.amount) AS total_spent
 //	sqblpg.As(subquery, "sub")                // (SELECT ...) AS sub
-func As(source any, alias string) *syntax.Aliased {
+func As(source any, alias string) syntax.Aliased {
 	return syntax.As(source, alias)
 }
 
@@ -163,13 +163,13 @@ func P(args ...any) syntax.Parameter {
 //	sqblpg.Fn("SUM", "amount")          // SUM(amount)
 //	sqblpg.Fn("COUNT", "*")             // COUNT(*)
 //	sqblpg.Fn("COALESCE", "x", sqbl.P(1)) // COALESCE(x, $1)
-func Fn(name string, args ...any) *syntax.SqlFn {
+func Fn(name string, args ...any) syntax.SqlFn {
 	return syntax.Fn(name, args...)
 }
 
 // Over wraps an expression with a window OVER clause.
 //
 //	sqblpg.Over(sqblpg.Fn("ROW_NUMBER")).PartitionBy("dept").OrderBy("salary")
-func Over(expr any) *syntax.WindowExpr {
+func Over(expr any) syntax.WindowExpr {
 	return syntax.Over(expr)
 }

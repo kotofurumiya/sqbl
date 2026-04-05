@@ -9,39 +9,41 @@ sqbl supports any SQL database by implementing the `SqlDialect` interface. This 
 ```go
 // dialect/dialect.go
 type SqlDialect interface {
-    Quote(str string) string
-    QuoteIdentifier(str string) string
-    PlaceholderPositional() string
-    PlaceholderIndexed(index int) string
-    Bool(b bool) string
+    Quote(buf *bytes.Buffer, s string)
+    QuoteIdentifier(buf *bytes.Buffer, name string)
+    PlaceholderPositional(buf *bytes.Buffer)
+    PlaceholderIndexed(buf *bytes.Buffer, index int)
+    Bool(buf *bytes.Buffer, b bool)
 }
 ```
 
+All methods write directly into a `*bytes.Buffer` instead of returning strings. This eliminates intermediate string allocations throughout the rendering pipeline.
+
 Each method has a narrow, well-defined contract:
 
-- `Quote(str string) string`
-  - Wraps a **single** identifier segment (no dots) in the dialect's quote character
+- `Quote(buf *bytes.Buffer, s string)`
+  - Writes a **single** identifier segment (no dots) wrapped in the dialect's quote character into buf
   - Must escape any occurrence of the quote character inside the string
   - Must never split on dots — that is `QuoteIdentifier`'s job
-  - Example: a DB using `[` / `]` for quoting would turn `my]col` into `[my]]col]`
+  - Example: a DB using `[` / `]` for quoting would write `my]col` as `[my]]col]`
 
-- `QuoteIdentifier(name string) string`
+- `QuoteIdentifier(buf *bytes.Buffer, name string)`
   - Handles a dot-separated identifier such as `schema.table` or `db.schema.table`
-  - Must split on `.` and call `Quote` on each segment independently
-  - Must rejoin the segments with `.`
+  - Must split on `.` and write each segment quoted with `Quote`
+  - Must write `.` between segments
   - This ensures that `public.users` becomes `"public"."users"` rather than `"public.users"`
 
-- `PlaceholderPositional() string`
-  - Returns the positional bind parameter token (used by `P()` with no arguments)
+- `PlaceholderPositional(buf *bytes.Buffer)`
+  - Writes the positional bind parameter token (used by `P()` with no arguments) into buf
   - For most databases this is `?`
 
-- `PlaceholderIndexed(index int) string`
-  - Returns the indexed bind parameter token for the given position (1-based)
+- `PlaceholderIndexed(buf *bytes.Buffer, index int)`
+  - Writes the indexed bind parameter token for the given position (1-based) into buf
   - For databases that use indexed placeholders (`$1`, `$2`): use the index
   - For databases that use positional placeholders (`?`): ignore the index
 
-- `Bool(b bool) string`
-  - Returns the SQL literal for a boolean value
+- `Bool(buf *bytes.Buffer, b bool)`
+  - Writes the SQL literal for a boolean value into buf
   - Use `TRUE` / `FALSE` for databases with a native boolean type
   - Use `1` / `0` for databases without one (e.g. SQLite)
 
@@ -52,43 +54,47 @@ Each method has a narrow, well-defined contract:
 DuckDB follows the SQL standard and uses double-quote identifiers and `$N` placeholders, similar to PostgreSQL.
 
 ```go
-package dialect
+package sqblduckdb
 
 import (
-    "fmt"
+    "bytes"
+    "strconv"
     "strings"
+
+    "github.com/kotofurumiya/sqbl/dialect"
 )
 
 type DuckDBDialect struct{}
 
-var _ SqlDialect = &DuckDBDialect{}
+var _ dialect.SqlDialect = &DuckDBDialect{}
 
-func (d *DuckDBDialect) Quote(str string) string {
-    escaped := strings.ReplaceAll(str, `"`, `""`)
-    return `"` + escaped + `"`
+func (d *DuckDBDialect) Quote(buf *bytes.Buffer, s string) {
+    dialect.WriteQuotedPart(buf, s, '"')
 }
 
-func (d *DuckDBDialect) QuoteIdentifier(name string) string {
-    parts := strings.Split(name, ".")
-    for i, part := range parts {
-        parts[i] = d.Quote(part)
+func (d *DuckDBDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
+    if strings.IndexByte(name, '.') < 0 {
+        d.Quote(buf, name)
+        return
     }
-    return strings.Join(parts, ".")
+    dialect.QuoteIdentifierParts(buf, name, '"')
 }
 
-func (d *DuckDBDialect) PlaceholderPositional() string {
-    return "?"
+func (d *DuckDBDialect) PlaceholderPositional(buf *bytes.Buffer) {
+    buf.WriteByte('?')
 }
 
-func (d *DuckDBDialect) PlaceholderIndexed(index int) string {
-    return fmt.Sprintf("$%d", index)
+func (d *DuckDBDialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
+    buf.WriteByte('$')
+    buf.WriteString(strconv.Itoa(index))
 }
 
-func (d *DuckDBDialect) Bool(b bool) string {
+func (d *DuckDBDialect) Bool(buf *bytes.Buffer, b bool) {
     if b {
-        return "TRUE"
+        buf.WriteString("TRUE")
+    } else {
+        buf.WriteString("FALSE")
     }
-    return "FALSE"
 }
 ```
 
@@ -112,7 +118,7 @@ import (
 
 func newSelectBuilder() *builder.SqlSelectBuilder {
     b := &builder.SqlSelectBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{})
+    return b.Dialect(&DuckDBDialect{})
 }
 
 func From(table any) *builder.SqlSelectBuilder {
@@ -125,42 +131,42 @@ func Select(columns ...any) *builder.SqlSelectBuilder {
 
 func InsertInto(table string) *builder.SqlInsertBuilder {
     b := &builder.SqlInsertBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).Into(table)
+    return b.Dialect(&DuckDBDialect{}).Into(table)
 }
 
 func Update(table string) *builder.SqlUpdateBuilder {
     b := &builder.SqlUpdateBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).Table(table)
+    return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 
 func DeleteFrom(table string) *builder.SqlDeleteBuilder {
     b := &builder.SqlDeleteBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).From(table)
+    return b.Dialect(&DuckDBDialect{}).From(table)
 }
 
 func CreateTable(table string) *builder.SqlCreateTableBuilder {
     b := &builder.SqlCreateTableBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).Table(table)
+    return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 
 func CreateIndex(name string) *builder.SqlCreateIndexBuilder {
     b := &builder.SqlCreateIndexBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).Name(name)
+    return b.Dialect(&DuckDBDialect{}).Name(name)
 }
 
 func DropTable(table string) *builder.SqlDropTableBuilder {
     b := &builder.SqlDropTableBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).Table(table)
+    return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 
 func DropIndex(name string) *builder.SqlDropIndexBuilder {
     b := &builder.SqlDropIndexBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).Name(name)
+    return b.Dialect(&DuckDBDialect{}).Name(name)
 }
 
 func AlterTable(table string) *builder.SqlAlterTableBuilder {
     b := &builder.SqlAlterTableBuilder{}
-    return b.Dialect(&dialect.DuckDBDialect{}).Table(table)
+    return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 ```
 
@@ -173,7 +179,7 @@ package sqblduckdb
 
 import "github.com/kotofurumiya/sqbl/syntax"
 
-func As(source any, alias string) *syntax.Aliased              { return syntax.As(source, alias) }
+func As(source any, alias string) syntax.Aliased               { return syntax.As(source, alias) }
 func Eq(left any, right any) syntax.ComparisonExpr             { return syntax.Eq(left, right) }
 func Ne(left any, right any) syntax.ComparisonExpr             { return syntax.Ne(left, right) }
 func Lt(left any, right any) syntax.ComparisonExpr             { return syntax.Lt(left, right) }
@@ -192,8 +198,8 @@ func Like(left any, pattern string) syntax.ComparisonExpr      { return syntax.L
 func Asc(col string) syntax.Order                              { return syntax.Asc(col) }
 func Desc(col string) syntax.Order                             { return syntax.Desc(col) }
 func P(args ...any) syntax.Parameter                           { return syntax.P(args...) }
-func Fn(name string, args ...any) *syntax.SqlFn                { return syntax.Fn(name, args...) }
-func Over(expr any) *syntax.WindowExpr                         { return syntax.Over(expr) }
+func Fn(name string, args ...any) syntax.SqlFn                 { return syntax.Fn(name, args...) }
+func Over(expr any) syntax.WindowExpr                          { return syntax.Over(expr) }
 ```
 
 ---

@@ -9,8 +9,8 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newBuilder() *builder.SqlSelectBuilder {
-	return (&builder.SqlSelectBuilder{}).Dialect(&dialect.SimpleDialect{})
+func newBuilder() builder.SqlSelectBuilder {
+	return (builder.SqlSelectBuilder{}).Dialect(&dialect.SimpleDialect{})
 }
 
 func TestSqlSelectBuilder_SelectAll(t *testing.T) {

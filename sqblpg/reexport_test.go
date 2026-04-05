@@ -1,6 +1,7 @@
 package sqblpg
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/dialect"
@@ -20,150 +21,221 @@ func TestReexports(t *testing.T) {
 
 	t.Run("As", func(t *testing.T) {
 		t.Parallel()
-		if got, want := As("users", "u").ToSqlWithDialect(d), syntax.As("users", "u").ToSqlWithDialect(d); got != want {
-			t.Errorf("As: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		As("users", "u").AppendSQL(&got, d)
+		syntax.As("users", "u").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("As: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Eq", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Eq("a", "b").ToSqlWithDialect(d), syntax.Eq("a", "b").ToSqlWithDialect(d); got != want {
-			t.Errorf("Eq: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Eq("a", "b").AppendSQL(&got, d)
+		syntax.Eq("a", "b").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Eq: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Ne", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Ne("a", "b").ToSqlWithDialect(d), syntax.Ne("a", "b").ToSqlWithDialect(d); got != want {
-			t.Errorf("Ne: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Ne("a", "b").AppendSQL(&got, d)
+		syntax.Ne("a", "b").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Ne: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Lt", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Lt("age", 18).ToSqlWithDialect(d), syntax.Lt("age", 18).ToSqlWithDialect(d); got != want {
-			t.Errorf("Lt: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Lt("age", 18).AppendSQL(&got, d)
+		syntax.Lt("age", 18).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Lt: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Lte", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Lte("age", 18).ToSqlWithDialect(d), syntax.Lte("age", 18).ToSqlWithDialect(d); got != want {
-			t.Errorf("Lte: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Lte("age", 18).AppendSQL(&got, d)
+		syntax.Lte("age", 18).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Lte: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Gt", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Gt("score", 100).ToSqlWithDialect(d), syntax.Gt("score", 100).ToSqlWithDialect(d); got != want {
-			t.Errorf("Gt: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Gt("score", 100).AppendSQL(&got, d)
+		syntax.Gt("score", 100).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Gt: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Gte", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Gte("score", 100).ToSqlWithDialect(d), syntax.Gte("score", 100).ToSqlWithDialect(d); got != want {
-			t.Errorf("Gte: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Gte("score", 100).AppendSQL(&got, d)
+		syntax.Gte("score", 100).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Gte: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("And", func(t *testing.T) {
 		t.Parallel()
 		e1, e2 := syntax.Eq("a", "b"), syntax.Eq("c", "d")
-		if got, want := And(e1, e2).ToSqlWithDialect(d), syntax.And(e1, e2).ToSqlWithDialect(d); got != want {
-			t.Errorf("And: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		And(e1, e2).AppendSQL(&got, d)
+		syntax.And(e1, e2).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("And: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Or", func(t *testing.T) {
 		t.Parallel()
 		e1, e2 := syntax.Eq("a", "b"), syntax.Eq("c", "d")
-		if got, want := Or(e1, e2).ToSqlWithDialect(d), syntax.Or(e1, e2).ToSqlWithDialect(d); got != want {
-			t.Errorf("Or: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Or(e1, e2).AppendSQL(&got, d)
+		syntax.Or(e1, e2).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Or: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Asc", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Asc("name").ToSqlWithDialect(d), syntax.Asc("name").ToSqlWithDialect(d); got != want {
-			t.Errorf("Asc: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Asc("name").AppendSQL(&got, d)
+		syntax.Asc("name").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Asc: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Desc", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Desc("created_at").ToSqlWithDialect(d), syntax.Desc("created_at").ToSqlWithDialect(d); got != want {
-			t.Errorf("Desc: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Desc("created_at").AppendSQL(&got, d)
+		syntax.Desc("created_at").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Desc: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Not", func(t *testing.T) {
 		t.Parallel()
 		e := syntax.Eq("active", false)
-		if got, want := Not(e).ToSqlWithDialect(d), syntax.Not(e).ToSqlWithDialect(d); got != want {
-			t.Errorf("Not: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Not(e).AppendSQL(&got, d)
+		syntax.Not(e).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Not: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("In", func(t *testing.T) {
 		t.Parallel()
-		if got, want := In("status", "'active'", "'pending'").ToSqlWithDialect(d), syntax.In("status", "'active'", "'pending'").ToSqlWithDialect(d); got != want {
-			t.Errorf("In: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		In("status", "'active'", "'pending'").AppendSQL(&got, d)
+		syntax.In("status", "'active'", "'pending'").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("In: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("NotIn", func(t *testing.T) {
 		t.Parallel()
-		if got, want := NotIn("status", "'deleted'").ToSqlWithDialect(d), syntax.NotIn("status", "'deleted'").ToSqlWithDialect(d); got != want {
-			t.Errorf("NotIn: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		NotIn("status", "'deleted'").AppendSQL(&got, d)
+		syntax.NotIn("status", "'deleted'").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("NotIn: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("IsNull", func(t *testing.T) {
 		t.Parallel()
-		if got, want := IsNull("deleted_at").ToSqlWithDialect(d), syntax.IsNull("deleted_at").ToSqlWithDialect(d); got != want {
-			t.Errorf("IsNull: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		IsNull("deleted_at").AppendSQL(&got, d)
+		syntax.IsNull("deleted_at").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("IsNull: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("IsNotNull", func(t *testing.T) {
 		t.Parallel()
-		if got, want := IsNotNull("email").ToSqlWithDialect(d), syntax.IsNotNull("email").ToSqlWithDialect(d); got != want {
-			t.Errorf("IsNotNull: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		IsNotNull("email").AppendSQL(&got, d)
+		syntax.IsNotNull("email").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("IsNotNull: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Between", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Between("age", 18, 65).ToSqlWithDialect(d), syntax.Between("age", 18, 65).ToSqlWithDialect(d); got != want {
-			t.Errorf("Between: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Between("age", 18, 65).AppendSQL(&got, d)
+		syntax.Between("age", 18, 65).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Between: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("Like", func(t *testing.T) {
 		t.Parallel()
-		if got, want := Like("name", "'%foo%'").ToSqlWithDialect(d), syntax.Like("name", "'%foo%'").ToSqlWithDialect(d); got != want {
-			t.Errorf("Like: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		Like("name", "'%foo%'").AppendSQL(&got, d)
+		syntax.Like("name", "'%foo%'").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Like: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("ILike", func(t *testing.T) {
 		t.Parallel()
-		if got, want := ILike("name", "'%foo%'").ToSqlWithDialect(d), syntax.ILike("name", "'%foo%'").ToSqlWithDialect(d); got != want {
-			t.Errorf("ILike: got %q, want %q", got, want)
+		var got, want bytes.Buffer
+		ILike("name", "'%foo%'").AppendSQL(&got, d)
+		syntax.ILike("name", "'%foo%'").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("ILike: got %q, want %q", got.String(), want.String())
 		}
 	})
 
 	t.Run("P", func(t *testing.T) {
 		t.Parallel()
-		if got, want := P().ToSqlWithDialect(d), syntax.P().ToSqlWithDialect(d); got != want {
-			t.Errorf("P(): got %q, want %q", got, want)
+		var got, want bytes.Buffer
+
+		P().AppendSQL(&got, d)
+		syntax.P().AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("P(): got %q, want %q", got.String(), want.String())
 		}
-		if got, want := P(1).ToSqlWithDialect(d), syntax.P(1).ToSqlWithDialect(d); got != want {
-			t.Errorf("P(1): got %q, want %q", got, want)
+
+		got.Reset()
+		want.Reset()
+		P(1).AppendSQL(&got, d)
+		syntax.P(1).AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("P(1): got %q, want %q", got.String(), want.String())
 		}
-		if got, want := P(":status").ToSqlWithDialect(d), syntax.P(":status").ToSqlWithDialect(d); got != want {
-			t.Errorf("P(named): got %q, want %q", got, want)
+
+		got.Reset()
+		want.Reset()
+		P(":status").AppendSQL(&got, d)
+		syntax.P(":status").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("P(named): got %q, want %q", got.String(), want.String())
 		}
 	})
 }

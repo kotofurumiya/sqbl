@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/dialect"
@@ -12,7 +13,7 @@ func TestFn(t *testing.T) {
 
 	tests := []struct {
 		name string
-		fn   *SqlFn
+		fn   SqlFn
 		want string
 	}{
 		{
@@ -61,9 +62,10 @@ func TestFn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.fn.ToSqlWithDialect(d)
-			if got != tt.want {
-				t.Errorf("Fn.ToSqlWithDialect() = %q; want %q", got, tt.want)
+			var buf bytes.Buffer
+			tt.fn.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("Fn.AppendSQL() = %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -75,7 +77,7 @@ func TestFn_WithPostgresDialect(t *testing.T) {
 
 	tests := []struct {
 		name string
-		fn   *SqlFn
+		fn   SqlFn
 		want string
 	}{
 		{
@@ -97,9 +99,10 @@ func TestFn_WithPostgresDialect(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.fn.ToSqlWithDialect(d)
-			if got != tt.want {
-				t.Errorf("Fn.ToSqlWithDialect(pg) = %q; want %q", got, tt.want)
+			var buf bytes.Buffer
+			tt.fn.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("Fn.AppendSQL(pg) = %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -110,9 +113,10 @@ func TestFn_AsFragment(t *testing.T) {
 	d := &dialect.SimpleDialect{}
 
 	// Fn implements SqlFragment and can be used with As()
-	got := As(Fn("SUM", "amount"), "total").ToSqlWithDialect(d)
+	var buf bytes.Buffer
+	As(Fn("SUM", "amount"), "total").AppendSQL(&buf, d)
 	want := `SUM("amount") AS "total"`
-	if got != want {
-		t.Errorf("As(Fn(...), alias) = %q; want %q", got, want)
+	if got := buf.String(); got != want {
+		t.Errorf("As(Fn(...), alias).AppendSQL() = %q; want %q", got, want)
 	}
 }

@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/dialect"
@@ -38,20 +39,22 @@ func TestIsSimpleIdentifier(t *testing.T) {
 	}
 }
 
-func TestStringSource(t *testing.T) {
+func TestStringExpr(t *testing.T) {
 	t.Parallel()
 	d := &dialect.SimpleDialect{}
 
 	// Function calls are expressions and must pass through unquoted.
-	got := NewStringSource("COUNT(*)").ToSqlWithDialect(d)
-	if got != "COUNT(*)" {
-		t.Errorf("StringSource(COUNT(*)) = %q; want %q", got, "COUNT(*)")
+	var buf bytes.Buffer
+	NewStringExpr("COUNT(*)").AppendSQL(&buf, d)
+	if got := buf.String(); got != "COUNT(*)" {
+		t.Errorf("StringExpr(COUNT(*)) = %q; want %q", got, "COUNT(*)")
 	}
 
 	// Plain names — including those with spaces — are identifiers and must be quoted.
-	got = NewStringSource("my column").ToSqlWithDialect(d)
-	if got != `"my column"` {
-		t.Errorf("StringSource(my column) = %q; want %q", got, `"my column"`)
+	buf.Reset()
+	NewStringExpr("my column").AppendSQL(&buf, d)
+	if got := buf.String(); got != `"my column"` {
+		t.Errorf("StringExpr(my column) = %q; want %q", got, `"my column"`)
 	}
 }
 
@@ -71,7 +74,7 @@ func TestToFragment(t *testing.T) {
 		},
 		{
 			name:     "SqlFragment",
-			input:    NewStringSource("raw"),
+			input:    NewStringExpr("raw"),
 			expected: `"raw"`,
 		},
 		{
@@ -84,9 +87,10 @@ func TestToFragment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// t.Parallel()
-			got := ToFragment(tt.input).ToSqlWithDialect(d)
-			if got != tt.expected {
-				t.Errorf("ToFragment(%v).ToSqlWithDialect() = %q; want %q", tt.input, got, tt.expected)
+			var buf bytes.Buffer
+			ToFragment(tt.input).AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.expected {
+				t.Errorf("ToFragment(%v).AppendSQL() = %q; want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
@@ -119,9 +123,10 @@ func TestAliased(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// t.Parallel()
-			got := As(tt.source, tt.alias).ToSqlWithDialect(d)
-			if got != tt.expected {
-				t.Errorf("As(%q, %q).ToSqlWithDialect() = %q; want %q", tt.source, tt.alias, got, tt.expected)
+			var buf bytes.Buffer
+			As(tt.source, tt.alias).AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.expected {
+				t.Errorf("As(%q, %q).AppendSQL() = %q; want %q", tt.source, tt.alias, got, tt.expected)
 			}
 		})
 	}
@@ -151,9 +156,10 @@ func TestOrder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// t.Parallel()
-			got := tt.order.ToSqlWithDialect(d)
-			if got != tt.expected {
-				t.Errorf("Order.ToSqlWithDialect() = %q; want %q", got, tt.expected)
+			var buf bytes.Buffer
+			tt.order.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.expected {
+				t.Errorf("Order.AppendSQL() = %q; want %q", got, tt.expected)
 			}
 		})
 	}

@@ -8,8 +8,8 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newCreateIndexBuilder() *builder.SqlCreateIndexBuilder {
-	return (&builder.SqlCreateIndexBuilder{}).Dialect(&dialect.SimpleDialect{})
+func newCreateIndexBuilder() builder.SqlCreateIndexBuilder {
+	return (builder.SqlCreateIndexBuilder{}).Dialect(&dialect.SimpleDialect{})
 }
 
 func TestSqlCreateIndexBuilder_ImplementsSqlBuilder(t *testing.T) {

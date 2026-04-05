@@ -1,6 +1,7 @@
 package dialect
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -68,8 +69,9 @@ func TestPostgresDialect_QuoteIdentifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// t.Parallel()
-			got := d.QuoteIdentifier(tt.input)
-			if got != tt.expected {
+			var buf bytes.Buffer
+			d.QuoteIdentifier(&buf, tt.input)
+			if got := buf.String(); got != tt.expected {
 				t.Errorf("QuoteIdentifier(%q) = %s; want %s", tt.input, got, tt.expected)
 			}
 		})
@@ -81,20 +83,19 @@ func TestPostgresDialect_Quote(t *testing.T) {
 	d := &PostgresDialect{}
 
 	// Quote should not split by dots, it treats everything as a single part.
-	input := "schema.table"
-	expected := "\"schema.table\""
-	got := d.Quote(input)
-
-	if got != expected {
-		t.Errorf("Quote(%q) = %s; want %s", input, got, expected)
+	var buf bytes.Buffer
+	d.Quote(&buf, "schema.table")
+	if got, want := buf.String(), "\"schema.table\""; got != want {
+		t.Errorf("Quote(%q) = %s; want %s", "schema.table", got, want)
 	}
 }
 
 func TestPostgresDialect_PlaceholderPositional(t *testing.T) {
 	t.Parallel()
 	d := &PostgresDialect{}
-	got := d.PlaceholderPositional()
-	if got != "?" {
+	var buf bytes.Buffer
+	d.PlaceholderPositional(&buf)
+	if got := buf.String(); got != "?" {
 		t.Errorf("PlaceholderPositional() = %s; want ?", got)
 	}
 }
@@ -116,8 +117,9 @@ func TestPostgresDialect_PlaceholderIndexed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// t.Parallel()
-			got := d.PlaceholderIndexed(tt.index)
-			if got != tt.expected {
+			var buf bytes.Buffer
+			d.PlaceholderIndexed(&buf, tt.index)
+			if got := buf.String(); got != tt.expected {
 				t.Errorf("PlaceholderIndexed(%d) = %s; want %s", tt.index, got, tt.expected)
 			}
 		})
@@ -140,8 +142,9 @@ func TestPostgresDialect_Bool(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// t.Parallel()
-			got := d.Bool(tt.input)
-			if got != tt.expected {
+			var buf bytes.Buffer
+			d.Bool(&buf, tt.input)
+			if got := buf.String(); got != tt.expected {
 				t.Errorf("Bool(%v) = %s; want %s", tt.input, got, tt.expected)
 			}
 		})

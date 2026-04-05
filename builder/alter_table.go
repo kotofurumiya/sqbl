@@ -1,9 +1,10 @@
 package builder
 
 import (
-	"strings"
+	"bytes"
 
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 )
 
 type alterOp struct {
@@ -28,68 +29,77 @@ type SqlAlterTableBuilder struct {
 	op      alterOp
 }
 
-var _ SqlBuilder = (*SqlAlterTableBuilder)(nil)
+var _ SqlBuilder = SqlAlterTableBuilder{}
 
 // ToSql renders the ALTER TABLE statement with a trailing semicolon.
-func (b *SqlAlterTableBuilder) ToSql() string {
-	return b.renderSQL(b.dialect) + ";"
+func (b SqlAlterTableBuilder) ToSql() string {
+	buf := sqlbuf.GetStringBuffer()
+	b.renderSQL(buf, b.dialect)
+	buf.WriteByte(';')
+	s := buf.String()
+	sqlbuf.PutStringBuffer(buf)
+	return s
 }
 
 // ToSqlWithDialect renders the ALTER TABLE statement using the given dialect, without a trailing semicolon.
-func (b *SqlAlterTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	return b.renderSQL(d)
+func (b SqlAlterTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	buf := sqlbuf.GetStringBuffer()
+	b.renderSQL(buf, d)
+	s := buf.String()
+	sqlbuf.PutStringBuffer(buf)
+	return s
 }
 
-func (b *SqlAlterTableBuilder) renderSQL(d dialect.SqlDialect) string {
+func (b SqlAlterTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	if b.table == "" {
-		return "ALTER TABLE"
+		buf.WriteString("ALTER TABLE")
+		return
 	}
 
-	base := "ALTER TABLE " + d.QuoteIdentifier(b.table)
+	buf.WriteString("ALTER TABLE ")
+	d.QuoteIdentifier(buf, b.table)
 
-	var parts []string
 	switch b.op.kind {
 	case "ADD_COLUMN":
-		col := d.QuoteIdentifier(b.op.from)
+		buf.WriteString(" ADD COLUMN ")
+		d.QuoteIdentifier(buf, b.op.from)
 		if b.op.typ != "" {
-			col += " " + b.op.typ
+			buf.WriteByte(' ')
+			buf.WriteString(b.op.typ)
 		}
-		parts = append(parts, base+" ADD COLUMN "+col)
 	case "DROP_COLUMN":
-		parts = append(parts, base+" DROP COLUMN "+d.QuoteIdentifier(b.op.from))
+		buf.WriteString(" DROP COLUMN ")
+		d.QuoteIdentifier(buf, b.op.from)
 	case "RENAME_COLUMN":
-		parts = append(parts, base+" RENAME COLUMN "+d.QuoteIdentifier(b.op.from)+" TO "+d.QuoteIdentifier(b.op.to))
+		buf.WriteString(" RENAME COLUMN ")
+		d.QuoteIdentifier(buf, b.op.from)
+		buf.WriteString(" TO ")
+		d.QuoteIdentifier(buf, b.op.to)
 	case "RENAME_TABLE":
-		parts = append(parts, base+" RENAME TO "+d.QuoteIdentifier(b.op.to))
-	default:
-		parts = append(parts, base)
+		buf.WriteString(" RENAME TO ")
+		d.QuoteIdentifier(buf, b.op.to)
 	}
-
-	return strings.Join(parts, " ")
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b *SqlAlterTableBuilder) Dialect(d dialect.SqlDialect) *SqlAlterTableBuilder {
-	b2 := *b
-	b2.dialect = d
-	return &b2
+func (b SqlAlterTableBuilder) Dialect(d dialect.SqlDialect) SqlAlterTableBuilder {
+	b.dialect = d
+	return b
 }
 
 // Table sets the target table name.
-func (b *SqlAlterTableBuilder) Table(table string) *SqlAlterTableBuilder {
-	b2 := *b
-	b2.table = table
-	return &b2
+func (b SqlAlterTableBuilder) Table(table string) SqlAlterTableBuilder {
+	b.table = table
+	return b
 }
 
 // AddColumn adds a new column to the table.
 //
 //	sqblpg.AlterTable("users").AddColumn("bio", "TEXT")
 //	// ALTER TABLE "users" ADD COLUMN "bio" TEXT
-func (b *SqlAlterTableBuilder) AddColumn(name, typ string) *SqlAlterTableBuilder {
-	b2 := *b
-	b2.op = alterOp{kind: "ADD_COLUMN", from: name, typ: typ}
-	return &b2
+func (b SqlAlterTableBuilder) AddColumn(name, typ string) SqlAlterTableBuilder {
+	b.op = alterOp{kind: "ADD_COLUMN", from: name, typ: typ}
+	return b
 }
 
 // DropColumn removes a column from the table.
@@ -97,10 +107,9 @@ func (b *SqlAlterTableBuilder) AddColumn(name, typ string) *SqlAlterTableBuilder
 //
 //	sqblpg.AlterTable("users").DropColumn("legacy_col")
 //	// ALTER TABLE "users" DROP COLUMN "legacy_col"
-func (b *SqlAlterTableBuilder) DropColumn(name string) *SqlAlterTableBuilder {
-	b2 := *b
-	b2.op = alterOp{kind: "DROP_COLUMN", from: name}
-	return &b2
+func (b SqlAlterTableBuilder) DropColumn(name string) SqlAlterTableBuilder {
+	b.op = alterOp{kind: "DROP_COLUMN", from: name}
+	return b
 }
 
 // RenameColumn renames a column.
@@ -108,18 +117,16 @@ func (b *SqlAlterTableBuilder) DropColumn(name string) *SqlAlterTableBuilder {
 //
 //	sqblpg.AlterTable("users").RenameColumn("fullname", "name")
 //	// ALTER TABLE "users" RENAME COLUMN "fullname" TO "name"
-func (b *SqlAlterTableBuilder) RenameColumn(from, to string) *SqlAlterTableBuilder {
-	b2 := *b
-	b2.op = alterOp{kind: "RENAME_COLUMN", from: from, to: to}
-	return &b2
+func (b SqlAlterTableBuilder) RenameColumn(from, to string) SqlAlterTableBuilder {
+	b.op = alterOp{kind: "RENAME_COLUMN", from: from, to: to}
+	return b
 }
 
 // RenameTable renames the table.
 //
 //	sqblpg.AlterTable("users").RenameTable("members")
 //	// ALTER TABLE "users" RENAME TO "members"
-func (b *SqlAlterTableBuilder) RenameTable(to string) *SqlAlterTableBuilder {
-	b2 := *b
-	b2.op = alterOp{kind: "RENAME_TABLE", to: to}
-	return &b2
+func (b SqlAlterTableBuilder) RenameTable(to string) SqlAlterTableBuilder {
+	b.op = alterOp{kind: "RENAME_TABLE", to: to}
+	return b
 }

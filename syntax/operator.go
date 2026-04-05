@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -17,42 +18,42 @@ type ComparisonExpr struct {
 	Right    any
 }
 
-// ToSqlWithDialect renders the comparison as a SQL string using the given dialect.
-func (e ComparisonExpr) ToSqlWithDialect(d dialect.SqlDialect) string {
-	var left string
+// AppendSQL implements SqlFragment, writing the comparison into buf.
+func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	switch v := e.Left.(type) {
 	case string:
 		if isSimpleIdentifier(v) {
-			left = d.QuoteIdentifier(v)
+			d.QuoteIdentifier(buf, v)
 		} else {
-			left = v
+			buf.WriteString(v)
 		}
 	case SqlFragment:
-		left = v.ToSqlWithDialect(d)
+		v.AppendSQL(buf, d)
 	default:
-		left = fmt.Sprint(v)
+		buf.WriteString(fmt.Sprint(v))
 	}
 
-	var r string
+	buf.WriteByte(' ')
+	buf.WriteString(e.Operator)
+	buf.WriteByte(' ')
+
 	switch v := e.Right.(type) {
 	case SqlFragment:
-		r = v.ToSqlWithDialect(d)
+		v.AppendSQL(buf, d)
 	case bool:
-		r = d.Bool(v)
+		d.Bool(buf, v)
 	case string:
 		// isSimpleIdentifier already excludes strings containing '(' or '\''.
 		// The extra '"' check lets callers pass pre-quoted identifiers (e.g. "table"."col")
 		// through as-is rather than double-quoting them.
 		if isSimpleIdentifier(v) && !strings.ContainsAny(v, "\"") {
-			r = d.QuoteIdentifier(v)
+			d.QuoteIdentifier(buf, v)
 		} else {
-			r = v
+			buf.WriteString(v)
 		}
 	default:
-		r = fmt.Sprintf("%v", v)
+		buf.WriteString(fmt.Sprintf("%v", v))
 	}
-
-	return fmt.Sprintf("%s %s %v", left, e.Operator, r)
 }
 
 // Eq returns an equality (=) comparison expression.
@@ -105,21 +106,23 @@ type LogicalExpr struct {
 	Expressions []SqlFragment
 }
 
-// ToSqlWithDialect renders all sub-expressions joined by the logical operator.
+// AppendSQL implements SqlFragment, writing all sub-expressions joined by the logical operator into buf.
 // Nested LogicalExpr are wrapped in parentheses to preserve evaluation order.
-func (e LogicalExpr) ToSqlWithDialect(d dialect.SqlDialect) string {
-	strs := make([]string, 0, len(e.Expressions))
-	for _, exp := range e.Expressions {
-		s := exp.ToSqlWithDialect(d)
-		if _, ok := exp.(LogicalExpr); ok {
-			s = "(" + s + ")"
+func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	for i, exp := range e.Expressions {
+		if i > 0 {
+			buf.WriteByte(' ')
+			buf.WriteString(e.Operator)
+			buf.WriteByte(' ')
 		}
-		strs = append(strs, s)
+		if _, ok := exp.(LogicalExpr); ok {
+			buf.WriteByte('(')
+			exp.AppendSQL(buf, d)
+			buf.WriteByte(')')
+		} else {
+			exp.AppendSQL(buf, d)
+		}
 	}
-
-	sep := fmt.Sprintf(" %s ", e.Operator)
-
-	return strings.Join(strs, sep)
 }
 
 // And combines multiple expressions with AND.
@@ -145,9 +148,11 @@ type NotExpr struct {
 
 var _ SqlFragment = NotExpr{}
 
-// ToSqlWithDialect renders the expression wrapped in NOT (...).
-func (e NotExpr) ToSqlWithDialect(d dialect.SqlDialect) string {
-	return "NOT (" + e.Expr.ToSqlWithDialect(d) + ")"
+// AppendSQL implements SqlFragment, writing NOT (...) into buf.
+func (e NotExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	buf.WriteString("NOT (")
+	e.Expr.AppendSQL(buf, d)
+	buf.WriteByte(')')
 }
 
 // Not wraps an expression with NOT.
@@ -167,30 +172,31 @@ type InExpr struct {
 
 var _ SqlFragment = InExpr{}
 
-// ToSqlWithDialect renders the IN or NOT IN expression.
-func (e InExpr) ToSqlWithDialect(d dialect.SqlDialect) string {
-	left := ToFragment(e.Left).ToSqlWithDialect(d)
-
-	vals := make([]string, 0, len(e.Values))
-	for _, v := range e.Values {
+// AppendSQL implements SqlFragment, writing the IN or NOT IN expression into buf.
+func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	ToFragment(e.Left).AppendSQL(buf, d)
+	if e.Negate {
+		buf.WriteString(" NOT IN (")
+	} else {
+		buf.WriteString(" IN (")
+	}
+	for i, v := range e.Values {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
 		switch val := v.(type) {
 		case SqlFragment:
-			vals = append(vals, val.ToSqlWithDialect(d))
+			val.AppendSQL(buf, d)
 		case bool:
-			vals = append(vals, d.Bool(val))
+			d.Bool(buf, val)
 		case string:
 			// String values are SQL literals supplied by the caller (e.g. "'active'").
-			vals = append(vals, val)
+			buf.WriteString(val)
 		default:
-			vals = append(vals, fmt.Sprintf("%v", val))
+			buf.WriteString(fmt.Sprintf("%v", val))
 		}
 	}
-
-	op := "IN"
-	if e.Negate {
-		op = "NOT IN"
-	}
-	return fmt.Sprintf("%s %s (%s)", left, op, strings.Join(vals, ", "))
+	buf.WriteByte(')')
 }
 
 // In returns an IN expression.
@@ -220,13 +226,14 @@ type NullExpr struct {
 
 var _ SqlFragment = NullExpr{}
 
-// ToSqlWithDialect renders the IS NULL or IS NOT NULL expression.
-func (e NullExpr) ToSqlWithDialect(d dialect.SqlDialect) string {
-	col := ToFragment(e.Col).ToSqlWithDialect(d)
+// AppendSQL implements SqlFragment, writing IS NULL or IS NOT NULL into buf.
+func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	ToFragment(e.Col).AppendSQL(buf, d)
 	if e.Negate {
-		return col + " IS NOT NULL"
+		buf.WriteString(" IS NOT NULL")
+	} else {
+		buf.WriteString(" IS NULL")
 	}
-	return col + " IS NULL"
 }
 
 // IsNull returns an IS NULL expression.
@@ -254,25 +261,28 @@ type BetweenExpr struct {
 
 var _ SqlFragment = BetweenExpr{}
 
-// ToSqlWithDialect renders the BETWEEN expression.
-func (e BetweenExpr) ToSqlWithDialect(d dialect.SqlDialect) string {
-	col := ToFragment(e.Col).ToSqlWithDialect(d)
+// AppendSQL implements SqlFragment, writing the BETWEEN expression into buf.
+func (e BetweenExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	ToFragment(e.Col).AppendSQL(buf, d)
+	buf.WriteString(" BETWEEN ")
+	appendBound(buf, d, e.Low)
+	buf.WriteString(" AND ")
+	appendBound(buf, d, e.High)
+}
 
-	// Bound values are SQL literals supplied by the caller (e.g. 18, "'2025-01-01'").
-	renderBound := func(v any) string {
-		switch val := v.(type) {
-		case SqlFragment:
-			return val.ToSqlWithDialect(d)
-		case bool:
-			return d.Bool(val)
-		case string:
-			return val
-		default:
-			return fmt.Sprintf("%v", val)
-		}
+// appendBound writes a single BETWEEN bound value into buf.
+// Bound values are SQL literals supplied by the caller (e.g. 18, "'2025-01-01'").
+func appendBound(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
+	switch val := v.(type) {
+	case SqlFragment:
+		val.AppendSQL(buf, d)
+	case bool:
+		d.Bool(buf, val)
+	case string:
+		buf.WriteString(val)
+	default:
+		buf.WriteString(fmt.Sprintf("%v", val))
 	}
-
-	return fmt.Sprintf("%s BETWEEN %s AND %s", col, renderBound(e.Low), renderBound(e.High))
 }
 
 // Between returns a BETWEEN ... AND ... expression.

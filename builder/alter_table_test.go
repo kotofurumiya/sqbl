@@ -7,8 +7,8 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-func newAlterBuilder() *builder.SqlAlterTableBuilder {
-	return (&builder.SqlAlterTableBuilder{}).Dialect(&dialect.SimpleDialect{}).Table("users")
+func newAlterBuilder() builder.SqlAlterTableBuilder {
+	return (builder.SqlAlterTableBuilder{}).Dialect(&dialect.SimpleDialect{}).Table("users")
 }
 
 func TestSqlAlterTableBuilder_AddColumn(t *testing.T) {

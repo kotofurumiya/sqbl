@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 //
 // Characters that indicate a SQL expression rather than an identifier:
 //   - '(' — function calls such as COUNT(*), SUM(amount), NOW()
-//   - '\'' — string literals such as 'value', '2025-01-01'
+//   - '\” — string literals such as 'value', '2025-01-01'
 //
 // Special tokens that are always passed through as-is:
 //   - '*' — the wildcard token used in COUNT(*) and SELECT *
@@ -27,30 +28,30 @@ func isSimpleIdentifier(s string) bool {
 	return !strings.ContainsAny(s, "('")
 }
 
-// SqlFragment is a type that can render itself as a SQL string for a given dialect.
+// SqlFragment is a type that can render itself into a SQL buffer for a given dialect.
 type SqlFragment interface {
-	ToSqlWithDialect(d dialect.SqlDialect) string
+	AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect)
 }
 
-var _ SqlFragment = &StringSource{}
+var _ SqlFragment = StringExpr("")
 
-// StringSource is a SqlFragment backed by a raw SQL string.
-// It renders the string as-is regardless of dialect.
-type StringSource struct {
-	str string
+// StringExpr is a SqlFragment backed by a plain string.
+// Simple identifiers (no parentheses or quotes) are quoted by the dialect;
+// expressions such as "COUNT(*)" are passed through as-is.
+type StringExpr string
+
+// NewStringExpr creates a StringExpr from a plain SQL string or identifier.
+func NewStringExpr(s string) StringExpr {
+	return StringExpr(s)
 }
 
-// NewStringSource creates a StringSource from a raw SQL string.
-func NewStringSource(s string) *StringSource {
-	return &StringSource{str: s}
-}
-
-// ToSqlWithDialect implements SqlFragment. Simple identifiers are quoted; expressions are returned as-is.
-func (s *StringSource) ToSqlWithDialect(d dialect.SqlDialect) string {
-	if isSimpleIdentifier(s.str) {
-		return d.QuoteIdentifier(s.str)
+// AppendSQL implements SqlFragment. Simple identifiers are quoted; expressions are written as-is.
+func (s StringExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	if isSimpleIdentifier(string(s)) {
+		d.QuoteIdentifier(buf, string(s))
+	} else {
+		buf.WriteString(string(s))
 	}
-	return s.str
 }
 
 // ToFragment converts an arbitrary value to a SqlFragment.
@@ -59,9 +60,9 @@ func ToFragment(v any) SqlFragment {
 	case SqlFragment:
 		return v
 	case string:
-		return NewStringSource(v)
+		return NewStringExpr(v)
 	default:
-		return NewStringSource(fmt.Sprint(v))
+		return NewStringExpr(fmt.Sprint(v))
 	}
 }
 
@@ -71,12 +72,13 @@ type Aliased struct {
 	Alias  string
 }
 
-var _ SqlFragment = (*Aliased)(nil)
+var _ SqlFragment = Aliased{}
 
-// ToSqlWithDialect implements SqlFragment, rendering the source followed by AS alias.
-func (a *Aliased) ToSqlWithDialect(d dialect.SqlDialect) string {
-	srcSQL := a.Source.ToSqlWithDialect(d)
-	return srcSQL + " AS " + d.Quote(a.Alias)
+// AppendSQL implements SqlFragment, writing the source followed by AS alias into buf.
+func (a Aliased) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	a.Source.AppendSQL(buf, d)
+	buf.WriteString(" AS ")
+	d.Quote(buf, a.Alias)
 }
 
 // Order represents an ORDER BY expression with a direction.
@@ -87,9 +89,11 @@ type Order struct {
 
 var _ SqlFragment = Order{}
 
-// ToSqlWithDialect implements SqlFragment, rendering the column name followed by ASC or DESC.
-func (o Order) ToSqlWithDialect(d dialect.SqlDialect) string {
-	return d.QuoteIdentifier(o.col) + " " + o.dir
+// AppendSQL implements SqlFragment, writing the column name followed by ASC or DESC into buf.
+func (o Order) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	d.QuoteIdentifier(buf, o.col)
+	buf.WriteByte(' ')
+	buf.WriteString(o.dir)
 }
 
 // Asc creates an ascending ORDER BY expression.
@@ -111,6 +115,6 @@ func Desc(col string) Order {
 //	syntax.As("users", "u")                   // users AS u
 //	syntax.As("SUM(p.amount)", "total_spent") // SUM(p.amount) AS total_spent
 //	syntax.As(subquery, "sub")                // (SELECT ...) AS sub
-func As(source any, alias string) *Aliased {
-	return &Aliased{Source: ToFragment(source), Alias: alias}
+func As(source any, alias string) Aliased {
+	return Aliased{Source: ToFragment(source), Alias: alias}
 }

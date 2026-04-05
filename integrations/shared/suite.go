@@ -42,13 +42,13 @@ type Conn interface {
 // Suite holds the dialect-specific builder constructor functions.
 // Populate each field with the corresponding sqblpg / sqblsqlite / sqblmysql function.
 type Suite struct {
-	From        func(table any) *builder.SqlSelectBuilder
-	InsertInto  func(table string) *builder.SqlInsertBuilder
-	Update      func(table string) *builder.SqlUpdateBuilder
-	DeleteFrom  func(table string) *builder.SqlDeleteBuilder
-	CreateTable func(table string) *builder.SqlCreateTableBuilder
-	CreateIndex func(name string) *builder.SqlCreateIndexBuilder
-	DropTable   func(table string) *builder.SqlDropTableBuilder
-	DropIndex   func(name string) *builder.SqlDropIndexBuilder
-	AlterTable  func(table string) *builder.SqlAlterTableBuilder
+	From        func(table any) builder.SqlSelectBuilder
+	InsertInto  func(table string) builder.SqlInsertBuilder
+	Update      func(table string) builder.SqlUpdateBuilder
+	DeleteFrom  func(table string) builder.SqlDeleteBuilder
+	CreateTable func(table string) builder.SqlCreateTableBuilder
+	CreateIndex func(name string) builder.SqlCreateIndexBuilder
+	DropTable   func(table string) builder.SqlDropTableBuilder
+	DropIndex   func(name string) builder.SqlDropIndexBuilder
+	AlterTable  func(table string) builder.SqlAlterTableBuilder
 }

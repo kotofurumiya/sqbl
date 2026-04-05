@@ -1,7 +1,7 @@
 package builder
 
 import (
-	"strings"
+	"bytes"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 )
@@ -15,29 +15,18 @@ type SqlBuilder interface {
 	ToSqlWithDialect(d dialect.SqlDialect) string
 }
 
-var _ SqlBuilder = (*SqlSelectBuilder)(nil)
+var _ SqlBuilder = SqlSelectBuilder{}
 
-// mapJoin transforms each element of s with fn and joins the results with sep.
-// Returns "" when s is empty, so callers can use a single if-check.
+// quoteIdentifiers writes each name quoted by the dialect into buf, separated by ", ".
+// Used by table-constraint closures in create_table.go.
 //
-//	mapJoin([]int{1, 2, 3}, ", ", strconv.Itoa)  →  "1, 2, 3"
-//	mapJoin([]int{},         ", ", strconv.Itoa)  →  ""
-func mapJoin[T any](s []T, sep string, fn func(T) string) string {
-	if len(s) == 0 {
-		return ""
+//	quoteIdentifiers(buf, d, []string{"id", "name"})  →  "id", "name"
+//	quoteIdentifiers(buf, d, nil)                     →  (nothing written)
+func quoteIdentifiers(buf *bytes.Buffer, d dialect.SqlDialect, names []string) {
+	for i, name := range names {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		d.QuoteIdentifier(buf, name)
 	}
-	strs := make([]string, len(s))
-	for i, v := range s {
-		strs[i] = fn(v)
-	}
-	return strings.Join(strs, sep)
-}
-
-// quoteIdentifiers quotes every name with the dialect and joins them with ", ".
-// Convenience wrapper around mapJoin for the most common identifier-list pattern.
-//
-//	quoteIdentifiers(d, []string{"id", "name"})  →  `"id", "name"`
-//	quoteIdentifiers(d, nil)                     →  ""
-func quoteIdentifiers(d dialect.SqlDialect, names []string) string {
-	return mapJoin(names, ", ", d.QuoteIdentifier)
 }

@@ -8,8 +8,8 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newDeleteBuilder() *builder.SqlDeleteBuilder {
-	return (&builder.SqlDeleteBuilder{}).Dialect(&dialect.SimpleDialect{})
+func newDeleteBuilder() builder.SqlDeleteBuilder {
+	return (builder.SqlDeleteBuilder{}).Dialect(&dialect.SimpleDialect{})
 }
 
 func TestSqlDeleteBuilder_WithWhere(t *testing.T) {

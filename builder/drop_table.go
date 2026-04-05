@@ -1,9 +1,10 @@
 package builder
 
 import (
-	"strings"
+	"bytes"
 
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 )
 
 // SqlDropTableBuilder constructs a DROP TABLE statement using a fluent method chain.
@@ -18,61 +19,63 @@ type SqlDropTableBuilder struct {
 	cascade  bool // PostgreSQL only
 }
 
-var _ SqlBuilder = (*SqlDropTableBuilder)(nil)
+var _ SqlBuilder = SqlDropTableBuilder{}
 
 // ToSql renders the DROP TABLE statement with a trailing semicolon.
-func (b *SqlDropTableBuilder) ToSql() string {
-	return b.renderSQL(b.dialect) + ";"
+func (b SqlDropTableBuilder) ToSql() string {
+	buf := sqlbuf.GetStringBuffer()
+	b.renderSQL(buf, b.dialect)
+	buf.WriteByte(';')
+	s := buf.String()
+	sqlbuf.PutStringBuffer(buf)
+	return s
 }
 
 // ToSqlWithDialect renders the DROP TABLE statement using the given dialect, without a trailing semicolon.
-func (b *SqlDropTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	return b.renderSQL(d)
+func (b SqlDropTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	buf := sqlbuf.GetStringBuffer()
+	b.renderSQL(buf, d)
+	s := buf.String()
+	sqlbuf.PutStringBuffer(buf)
+	return s
 }
 
-func (b *SqlDropTableBuilder) renderSQL(d dialect.SqlDialect) string {
-	var parts []string
-
-	drop := "DROP TABLE"
+func (b SqlDropTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	buf.WriteString("DROP TABLE")
 	if b.ifExists {
-		drop += " IF EXISTS"
+		buf.WriteString(" IF EXISTS")
 	}
 	if b.table != "" {
-		drop += " " + d.QuoteIdentifier(b.table)
+		buf.WriteByte(' ')
+		d.QuoteIdentifier(buf, b.table)
 	}
-	parts = append(parts, drop)
-
+	// CASCADE is PostgreSQL-only; ignored on other dialects.
 	if b.cascade {
 		if _, isPg := d.(*dialect.PostgresDialect); isPg {
-			parts = append(parts, "CASCADE")
+			buf.WriteString(" CASCADE")
 		}
 	}
-
-	return strings.Join(parts, " ")
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b *SqlDropTableBuilder) Dialect(d dialect.SqlDialect) *SqlDropTableBuilder {
-	b2 := *b
-	b2.dialect = d
-	return &b2
+func (b SqlDropTableBuilder) Dialect(d dialect.SqlDialect) SqlDropTableBuilder {
+	b.dialect = d
+	return b
 }
 
 // Table sets the target table name.
-func (b *SqlDropTableBuilder) Table(table string) *SqlDropTableBuilder {
-	b2 := *b
-	b2.table = table
-	return &b2
+func (b SqlDropTableBuilder) Table(table string) SqlDropTableBuilder {
+	b.table = table
+	return b
 }
 
 // IfExists adds IF EXISTS to the statement, preventing an error if the table does not exist.
 //
 //	sqblpg.DropTable("users").IfExists()
 //	// DROP TABLE IF EXISTS "users"
-func (b *SqlDropTableBuilder) IfExists() *SqlDropTableBuilder {
-	b2 := *b
-	b2.ifExists = true
-	return &b2
+func (b SqlDropTableBuilder) IfExists() SqlDropTableBuilder {
+	b.ifExists = true
+	return b
 }
 
 // Cascade adds CASCADE to the statement (PostgreSQL only).
@@ -80,8 +83,7 @@ func (b *SqlDropTableBuilder) IfExists() *SqlDropTableBuilder {
 //
 //	sqblpg.DropTable("users").Cascade()
 //	// DROP TABLE "users" CASCADE
-func (b *SqlDropTableBuilder) Cascade() *SqlDropTableBuilder {
-	b2 := *b
-	b2.cascade = true
-	return &b2
+func (b SqlDropTableBuilder) Cascade() SqlDropTableBuilder {
+	b.cascade = true
+	return b
 }

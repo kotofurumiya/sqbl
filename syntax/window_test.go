@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/dialect"
@@ -12,7 +13,7 @@ func TestWindowExpr(t *testing.T) {
 
 	tests := []struct {
 		name string
-		w    *WindowExpr
+		w    WindowExpr
 		want string
 	}{
 		{
@@ -65,9 +66,10 @@ func TestWindowExpr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := tt.w.ToSqlWithDialect(d)
-			if got != tt.want {
-				t.Errorf("WindowExpr.ToSqlWithDialect() = %q; want %q", got, tt.want)
+			var buf bytes.Buffer
+			tt.w.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("WindowExpr.AppendSQL() = %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -79,7 +81,7 @@ func TestWindowExpr_WithPostgresDialect(t *testing.T) {
 
 	tests := []struct {
 		name string
-		w    *WindowExpr
+		w    WindowExpr
 		want string
 	}{
 		{
@@ -97,9 +99,10 @@ func TestWindowExpr_WithPostgresDialect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := tt.w.ToSqlWithDialect(d)
-			if got != tt.want {
-				t.Errorf("WindowExpr.ToSqlWithDialect(pg) = %q; want %q", got, tt.want)
+			var buf bytes.Buffer
+			tt.w.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("WindowExpr.AppendSQL(pg) = %q; want %q", got, tt.want)
 			}
 		})
 	}
@@ -110,9 +113,10 @@ func TestWindowExpr_AsFragment(t *testing.T) {
 	d := &dialect.SimpleDialect{}
 
 	// WindowExpr implements SqlFragment and can be used with As()
-	got := As(Over(Fn("ROW_NUMBER")).PartitionBy("dept").OrderBy("salary"), "rn").ToSqlWithDialect(d)
+	var buf bytes.Buffer
+	As(Over(Fn("ROW_NUMBER")).PartitionBy("dept").OrderBy("salary"), "rn").AppendSQL(&buf, d)
 	want := `ROW_NUMBER() OVER (PARTITION BY "dept" ORDER BY "salary") AS "rn"`
-	if got != want {
-		t.Errorf("As(Over(...), alias) = %q; want %q", got, want)
+	if got := buf.String(); got != want {
+		t.Errorf("As(Over(...), alias).AppendSQL() = %q; want %q", got, want)
 	}
 }

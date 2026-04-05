@@ -1,7 +1,7 @@
 package syntax
 
 import (
-	"strings"
+	"bytes"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 )
@@ -18,21 +18,21 @@ type WindowExpr struct {
 	frame       string // e.g. "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
 }
 
-var _ SqlFragment = (*WindowExpr)(nil)
+var _ SqlFragment = WindowExpr{}
 
 // Over wraps an expression (typically a Fn call) with an OVER clause.
 //
 //	syntax.Over(syntax.Fn("ROW_NUMBER"))
 //	syntax.Over(syntax.Fn("SUM", "amount"))
-func Over(expr any) *WindowExpr {
-	return &WindowExpr{expr: ToFragment(expr)}
+func Over(expr any) WindowExpr {
+	return WindowExpr{expr: ToFragment(expr)}
 }
 
 // PartitionBy sets the PARTITION BY columns.
 //
 //	w.PartitionBy("department", "region")
 //	// PARTITION BY "department", "region"
-func (w *WindowExpr) PartitionBy(cols ...string) *WindowExpr {
+func (w WindowExpr) PartitionBy(cols ...string) WindowExpr {
 	w.partitionBy = cols
 	return w
 }
@@ -42,7 +42,7 @@ func (w *WindowExpr) PartitionBy(cols ...string) *WindowExpr {
 //
 //	w.OrderBy("salary")
 //	w.OrderBy(syntax.Desc("salary"))
-func (w *WindowExpr) OrderBy(cols ...any) *WindowExpr {
+func (w WindowExpr) OrderBy(cols ...any) WindowExpr {
 	w.orderBy = cols
 	return w
 }
@@ -50,7 +50,7 @@ func (w *WindowExpr) OrderBy(cols ...any) *WindowExpr {
 // Rows sets the frame clause.
 //
 //	w.Rows("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW")
-func (w *WindowExpr) Rows(frame string) *WindowExpr {
+func (w WindowExpr) Rows(frame string) WindowExpr {
 	w.frame = "ROWS " + frame
 	return w
 }
@@ -58,34 +58,44 @@ func (w *WindowExpr) Rows(frame string) *WindowExpr {
 // Range sets the RANGE frame clause.
 //
 //	w.Range("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW")
-func (w *WindowExpr) Range(frame string) *WindowExpr {
+func (w WindowExpr) Range(frame string) WindowExpr {
 	w.frame = "RANGE " + frame
 	return w
 }
 
-// ToSqlWithDialect implements SqlFragment.
-func (w *WindowExpr) ToSqlWithDialect(d dialect.SqlDialect) string {
-	var windowParts []string
-
+// AppendSQL implements SqlFragment, writing the window function expression into buf.
+func (w WindowExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	w.expr.AppendSQL(buf, d)
+	buf.WriteString(" OVER (")
+	needSpace := false
 	if len(w.partitionBy) > 0 {
-		quoted := make([]string, 0, len(w.partitionBy))
-		for _, col := range w.partitionBy {
-			quoted = append(quoted, ToFragment(col).ToSqlWithDialect(d))
+		buf.WriteString("PARTITION BY ")
+		for i, col := range w.partitionBy {
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+			ToFragment(col).AppendSQL(buf, d)
 		}
-		windowParts = append(windowParts, "PARTITION BY "+strings.Join(quoted, ", "))
+		needSpace = true
 	}
-
 	if len(w.orderBy) > 0 {
-		quoted := make([]string, 0, len(w.orderBy))
-		for _, col := range w.orderBy {
-			quoted = append(quoted, ToFragment(col).ToSqlWithDialect(d))
+		if needSpace {
+			buf.WriteByte(' ')
 		}
-		windowParts = append(windowParts, "ORDER BY "+strings.Join(quoted, ", "))
+		buf.WriteString("ORDER BY ")
+		for i, col := range w.orderBy {
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+			ToFragment(col).AppendSQL(buf, d)
+		}
+		needSpace = true
 	}
-
 	if w.frame != "" {
-		windowParts = append(windowParts, w.frame)
+		if needSpace {
+			buf.WriteByte(' ')
+		}
+		buf.WriteString(w.frame)
 	}
-
-	return w.expr.ToSqlWithDialect(d) + " OVER (" + strings.Join(windowParts, " ") + ")"
+	buf.WriteByte(')')
 }
