@@ -115,7 +115,8 @@ func (b SqlSelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 
 	// SELECT [DISTINCT [ON (col1, col2)]]
 	// DISTINCT ON is PostgreSQL-only; fall back to plain SELECT on other dialects.
-	if len(b.distinctOn) > 0 {
+	switch {
+	case len(b.distinctOn) > 0:
 		if _, isPg := d.(*dialect.PostgresDialect); isPg {
 			buf.WriteString("SELECT DISTINCT ON (")
 			for i, col := range b.distinctOn {
@@ -128,9 +129,9 @@ func (b SqlSelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 		} else {
 			buf.WriteString("SELECT")
 		}
-	} else if b.distinct {
+	case b.distinct:
 		buf.WriteString("SELECT DISTINCT")
-	} else {
+	default:
 		buf.WriteString("SELECT")
 	}
 

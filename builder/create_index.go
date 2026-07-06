@@ -31,6 +31,7 @@ var _ SqlBuilder = SqlCreateIndexBuilder{}
 // All column names are quoted via the dialect. The USING method and WHERE
 // predicate are passed through verbatim, so callers are responsible for
 // their correctness.
+
 // ToSql renders the CREATE INDEX statement with a trailing semicolon.
 func (b SqlCreateIndexBuilder) ToSql() string {
 	buf := sqlbuf.GetStringBuffer()

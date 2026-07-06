@@ -48,7 +48,7 @@ var _ SqlBuilder = SqlCreateTableBuilder{}
 //	UNIQUE ("email")
 //	FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE
 //	CHECK (price > 0)
-//
+
 // ToSql renders the CREATE TABLE statement with a trailing semicolon.
 func (b SqlCreateTableBuilder) ToSql() string {
 	buf := sqlbuf.GetStringBuffer()

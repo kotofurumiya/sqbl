@@ -30,7 +30,7 @@ func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	case SqlFragment:
 		v.AppendSQL(buf, d)
 	default:
-		buf.WriteString(fmt.Sprint(v))
+		fmt.Fprint(buf, v)
 	}
 
 	buf.WriteByte(' ')
@@ -52,7 +52,7 @@ func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			buf.WriteString(v)
 		}
 	default:
-		buf.WriteString(fmt.Sprintf("%v", v))
+		fmt.Fprintf(buf, "%v", v)
 	}
 }
 
@@ -193,7 +193,7 @@ func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			// String values are SQL literals supplied by the caller (e.g. "'active'").
 			buf.WriteString(val)
 		default:
-			buf.WriteString(fmt.Sprintf("%v", val))
+			fmt.Fprintf(buf, "%v", val)
 		}
 	}
 	buf.WriteByte(')')
@@ -281,7 +281,7 @@ func appendBound(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
 	case string:
 		buf.WriteString(val)
 	default:
-		buf.WriteString(fmt.Sprintf("%v", val))
+		fmt.Fprintf(buf, "%v", val)
 	}
 }
 

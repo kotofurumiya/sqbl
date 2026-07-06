@@ -63,6 +63,6 @@ func fnArgAppend(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
 			buf.WriteString(val)
 		}
 	default:
-		buf.WriteString(fmt.Sprint(val))
+		fmt.Fprint(buf, val)
 	}
 }
