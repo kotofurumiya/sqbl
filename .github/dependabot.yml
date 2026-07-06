@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Keeps the pinned SHAs in .github/workflows/*.yml up to date.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Root module (github.com/kotofurumiya/sqbl) has no dependencies today,
+  # but this is here so security PRs fire the moment one is added.
+  #
+  # open-pull-requests-limit: 0 disables routine version-update PRs while
+  # leaving Dependabot security updates (vulnerability fixes) unaffected.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+
+  # integrations/ is a separate Go module (its own go.mod) with real DB
+  # driver dependencies (pgx, go-sql-driver/mysql, modernc.org/sqlite).
+  - package-ecosystem: "gomod"
+    directory: "/integrations"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0

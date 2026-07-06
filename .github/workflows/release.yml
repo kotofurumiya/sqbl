@@ -1,0 +1,66 @@
+# Publishes a GitHub Release on demand. Triggered manually with a version
+# input (e.g. "v1.2.3"); the workflow creates and pushes that tag itself,
+# after running the integration suite (see integration.yml) so a release
+# never ships without a green run against real PostgreSQL/MariaDB.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. v1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  # Fails fast on a malformed input before the (slower) integration job
+  # spins up Docker databases for nothing.
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must look like vX.Y.Z (got '${{ inputs.version }}')"
+            exit 1
+          fi
+
+  # Reused from integration.yml via workflow_call — same job that runs on
+  # every main/develop push, gating the release on it too.
+  integration:
+    needs: validate
+    uses: ./.github/workflows/integration.yml
+
+  release:
+    needs: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # Sanity check on the root module before publishing.
+      - name: Test
+        run: go test ./...
+
+      # Tags the commit that triggered this run (the branch picked in the
+      # workflow_dispatch UI) and pushes it, so `go get` can resolve it.
+      - name: Create and push tag
+        run: |
+          git tag "${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
+            --generate-notes
