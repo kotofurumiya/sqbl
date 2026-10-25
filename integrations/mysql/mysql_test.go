@@ -111,6 +111,8 @@ var defaultSuite = shared.Suite{
 	DropTable:   sqblmysql.DropTable,
 	DropIndex:   sqblmysql.DropIndex,
 	AlterTable:  sqblmysql.AlterTable,
+
+	DropIndexOnTable: true,
 }
 
 func TestMySQL_CRUD(t *testing.T) {

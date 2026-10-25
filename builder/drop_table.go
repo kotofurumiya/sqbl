@@ -49,11 +49,8 @@ func (b SqlDropTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) 
 		buf.WriteByte(' ')
 		d.QuoteIdentifier(buf, b.table)
 	}
-	// CASCADE is PostgreSQL-only; ignored on other dialects.
 	if b.cascade {
-		if _, isPg := d.(*dialect.PostgresDialect); isPg {
-			buf.WriteString(" CASCADE")
-		}
+		buf.WriteString(" CASCADE")
 	}
 }
 
@@ -78,7 +75,7 @@ func (b SqlDropTableBuilder) IfExists() SqlDropTableBuilder {
 	return b
 }
 
-// Cascade adds CASCADE to the statement (PostgreSQL only).
+// Cascade adds CASCADE to the statement. Supported by PostgreSQL.
 // Automatically drops objects that depend on the table.
 //
 //	sqblpg.DropTable("users").Cascade()

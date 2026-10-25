@@ -51,4 +51,8 @@ type Suite struct {
 	DropTable   func(table string) builder.SqlDropTableBuilder
 	DropIndex   func(name string) builder.SqlDropIndexBuilder
 	AlterTable  func(table string) builder.SqlAlterTableBuilder
+
+	// DropIndexOnTable reports whether DROP INDEX needs "ON table".
+	// sqbl renders exactly what is requested, so scenarios branch on it themselves.
+	DropIndexOnTable bool
 }

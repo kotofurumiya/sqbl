@@ -41,18 +41,15 @@ func (b SqlDropIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 }
 
 func (b SqlDropIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	_, isMysql := d.(*dialect.MysqlDialect)
-
 	buf.WriteString("DROP INDEX")
-	if b.ifExists && !isMysql {
+	if b.ifExists {
 		buf.WriteString(" IF EXISTS")
 	}
 	if b.name != "" {
 		buf.WriteByte(' ')
 		d.QuoteIdentifier(buf, b.name)
 	}
-	// MySQL requires ON table clause.
-	if isMysql && b.on != "" {
+	if b.on != "" {
 		buf.WriteString(" ON ")
 		d.QuoteIdentifier(buf, b.on)
 	}
@@ -70,8 +67,9 @@ func (b SqlDropIndexBuilder) Name(name string) SqlDropIndexBuilder {
 	return b
 }
 
-// IfExists adds IF EXISTS to the statement (PostgreSQL and SQLite only).
+// IfExists adds IF EXISTS to the statement.
 // Prevents an error if the index does not exist.
+// Supported by PostgreSQL, SQLite, and MariaDB; MySQL does not support it.
 //
 //	sqblpg.DropIndex("idx_users_email").IfExists()
 //	// DROP INDEX IF EXISTS "idx_users_email"
@@ -80,8 +78,8 @@ func (b SqlDropIndexBuilder) IfExists() SqlDropIndexBuilder {
 	return b
 }
 
-// On sets the table name for the DROP INDEX statement (MySQL only).
-// MySQL requires specifying the table when dropping an index.
+// On adds ON table to the statement.
+// Required by MySQL and MariaDB; PostgreSQL and SQLite reject it.
 //
 //	sqblmysql.DropIndex("idx_users_email").On("users")
 //	// DROP INDEX `idx_users_email` ON `users`
