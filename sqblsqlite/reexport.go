@@ -171,6 +171,13 @@ func Fn(name string, args ...any) syntax.SqlFn {
 	return syntax.Fn(name, args...)
 }
 
+// Cast creates a CAST(expr AS type) expression. The type is written as-is.
+//
+//	sqblsqlite.Cast(sqblsqlite.P(1), "BIGINT") // CAST(<param> AS BIGINT)
+func Cast(expr any, typ string) syntax.CastExpr {
+	return syntax.Cast(expr, typ)
+}
+
 // Over wraps an expression with a window OVER clause.
 //
 //	sqblsqlite.Over(sqblsqlite.Fn("ROW_NUMBER")).PartitionBy("dept").OrderBy("salary")

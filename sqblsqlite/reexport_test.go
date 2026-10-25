@@ -29,6 +29,16 @@ func TestReexports(t *testing.T) {
 		}
 	})
 
+	t.Run("Cast", func(t *testing.T) {
+		t.Parallel()
+		var got, want bytes.Buffer
+		Cast("price", "TEXT").AppendSQL(&got, d)
+		syntax.Cast("price", "TEXT").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Cast: got %q, want %q", got.String(), want.String())
+		}
+	})
+
 	t.Run("Eq", func(t *testing.T) {
 		t.Parallel()
 		var got, want bytes.Buffer
