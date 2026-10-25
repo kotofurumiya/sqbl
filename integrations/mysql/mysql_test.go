@@ -269,6 +269,10 @@ func TestMySQL_CreateIndex(t *testing.T) {
 // TestMySQL_CreateIndex_Partial is intentionally absent: MySQL/MariaDB do not
 // support partial indexes (WHERE clause in CREATE INDEX).
 
+// TestMySQL_Upsert_DoUpdateWhere and TestMySQL_Upsert_OnConflictWhere are
+// intentionally absent: MySQL/MariaDB use ON DUPLICATE KEY UPDATE instead of
+// ON CONFLICT, and have no conditional or partial-index form of it.
+
 func TestMySQL_FilteringAndPagination(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
