@@ -24,6 +24,15 @@ func connectDB(t *testing.T) *pgx.Conn {
 	if err != nil {
 		t.Fatalf("PostgreSQL not available: %v", err)
 	}
+	// Close in t.Cleanup rather than a defer in each test, so that cleanups
+	// registered later by the test (e.g. DROP TABLE) still run on an open
+	// connection; cleanups run in reverse registration order.
+	// t.Context() is not used because it is already canceled when cleanups run.
+	t.Cleanup(func() {
+		if err := conn.Close(context.Background()); err != nil {
+			t.Errorf("close conn: %v", err)
+		}
+	})
 	return conn
 }
 
@@ -76,146 +85,125 @@ var defaultSuite = shared.Suite{
 func TestPostgres_CRUD(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunCRUD(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_ValueAsParameter(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_ValueAsParameter(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_StoredValue(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_StoredValue(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_LikeWildcardsInEqValue(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_LikeWildcardsInEqValue(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_QuotedIdentifier(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_QuotedIdentifier(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_OrderByIdentifier(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_OrderByIdentifier(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_TableNameIdentifier(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_TableNameIdentifier(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_SelectColumnIdentifier(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_SelectColumnIdentifier(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_AliasIdentifier(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_AliasIdentifier(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_CommentBasedPayloads(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_CommentBasedPayloads(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Injection_StackedInsertPayload(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunInjection_StackedInsertPayload(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_JoinWithAliases(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunJoinWithAliases(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Subquery(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunSubquery(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_SetOperations(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunSetOperations(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_CTEAndAggregation(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunCTEAndAggregation(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Identifiers_ReservedKeywords(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunIdentifiers_ReservedKeywords(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Identifiers_MixedCase(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunIdentifiers_MixedCase(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Identifiers_EmbeddedDoubleQuote(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunIdentifiers_EmbeddedDoubleQuote(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_FilteringAndPagination(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunFilteringAndPagination(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_RecursiveCTE(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunRecursiveCTE(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_SchemaEvolution(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunSchemaEvolution(t, adapt(conn), defaultSuite)
 }

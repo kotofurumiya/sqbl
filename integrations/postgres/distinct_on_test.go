@@ -12,8 +12,6 @@ import (
 func TestPostgres_DistinctOn(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
-
 	ctx := context.Background()
 	a := adapt(conn)
 

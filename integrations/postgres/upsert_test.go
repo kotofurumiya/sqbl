@@ -15,8 +15,6 @@ import (
 func TestPostgres_ReturningAndUpsert(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
-
 	ctx := context.Background()
 	a := adapt(conn)
 
@@ -120,13 +118,11 @@ func TestPostgres_ReturningAndUpsert(t *testing.T) {
 func TestPostgres_Upsert_DoUpdateWhere(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunUpsert_DoUpdateWhere(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_Upsert_OnConflictWhere(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunUpsert_OnConflictWhere(t, adapt(conn), defaultSuite)
 }

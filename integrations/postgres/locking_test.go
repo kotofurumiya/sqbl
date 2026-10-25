@@ -19,12 +19,8 @@ func TestPostgres_ForUpdateSkipLocked(t *testing.T) {
 
 	ctx := context.Background()
 	conn := connectDB(t)
-	defer conn.Close(ctx)
-
 	// A second independent connection simulates a concurrent worker process.
 	conn2 := connectDB(t)
-	defer conn2.Close(ctx)
-
 	// Create the shared table if it does not exist yet, then wipe any leftover
 	// rows from a previous run so the test starts with a clean slate.
 	if _, err := conn.Exec(ctx, `
@@ -43,7 +39,9 @@ func TestPostgres_ForUpdateSkipLocked(t *testing.T) {
 
 	// Drop the table once the test finishes so it does not leak into other runs.
 	t.Cleanup(func() {
-		conn.Exec(ctx, `DROP TABLE IF EXISTS jobs_test`)
+		if _, err := conn.Exec(ctx, `DROP TABLE IF EXISTS jobs_test`); err != nil {
+			t.Errorf("drop table: %v", err)
+		}
 	})
 
 	// Insert three pending jobs. Having at least two rows is essential:
@@ -76,7 +74,11 @@ func TestPostgres_ForUpdateSkipLocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx1: %v", err)
 	}
-	defer tx1.Rollback(ctx)
+	defer func() {
+		if err := tx1.Rollback(ctx); err != nil {
+			t.Errorf("rollback tx1: %v", err)
+		}
+	}()
 
 	var id1 int
 	var payload1 string
@@ -91,7 +93,11 @@ func TestPostgres_ForUpdateSkipLocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx2: %v", err)
 	}
-	defer tx2.Rollback(ctx)
+	defer func() {
+		if err := tx2.Rollback(ctx); err != nil {
+			t.Errorf("rollback tx2: %v", err)
+		}
+	}()
 
 	var id2 int
 	var payload2 string

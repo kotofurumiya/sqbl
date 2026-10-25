@@ -86,6 +86,14 @@ func openDB(t *testing.T) *sql.DB {
 		_ = db.Close()
 		t.Fatalf("set ANSI_QUOTES: %v", err)
 	}
+	// Close in t.Cleanup rather than a defer in each test, so that cleanups
+	// registered later by the test (e.g. DROP TABLE) still run on an open
+	// connection; cleanups run in reverse registration order.
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	})
 	return db
 }
 
@@ -108,161 +116,138 @@ var defaultSuite = shared.Suite{
 func TestMySQL_CRUD(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCRUD(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_ValueAsParameter(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_ValueAsParameter(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_StoredValue(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_StoredValue(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_LikeWildcardsInEqValue(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_LikeWildcardsInEqValue(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_QuotedIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_QuotedIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_OrderByIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_OrderByIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_TableNameIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_TableNameIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_SelectColumnIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_SelectColumnIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_AliasIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_AliasIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_CommentBasedPayloads(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_CommentBasedPayloads(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Injection_StackedInsertPayload(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_StackedInsertPayload(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_JoinWithAliases(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunJoinWithAliases(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Subquery(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunSubquery(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_SetOperations(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunSetOperations(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_CTEAndAggregation(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCTEAndAggregation(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Identifiers_ReservedKeywords(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunIdentifiers_ReservedKeywords(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Identifiers_MixedCase(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunIdentifiers_MixedCase(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_Identifiers_EmbeddedDoubleQuote(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunIdentifiers_EmbeddedDoubleQuote(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_CreateTable(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_CreateTable_UniqueConstraint(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable_UniqueConstraint(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_CreateTable_ForeignKey(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable_ForeignKey(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_CreateTable_Check(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable_Check(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_CreateIndex(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateIndex(t, adapt(db), defaultSuite)
 }
 
@@ -276,29 +261,24 @@ func TestMySQL_CreateIndex(t *testing.T) {
 func TestMySQL_FilteringAndPagination(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunFilteringAndPagination(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_RecursiveCTE(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunRecursiveCTE(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_SchemaEvolution(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunSchemaEvolution(t, adapt(db), defaultSuite)
 }
 
 func TestMySQL_OnDuplicateKeyUpdate(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
-
 	ctx := context.Background()
 	a := adapt(db)
 

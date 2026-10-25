@@ -12,36 +12,30 @@ import (
 func TestPostgres_CreateTable(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunCreateTable(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_CreateTable_UniqueConstraint(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunCreateTable_UniqueConstraint(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_CreateTable_ForeignKey(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunCreateTable_ForeignKey(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_CreateTable_Check(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
 	shared.RunCreateTable_Check(t, adapt(conn), defaultSuite)
 }
 
 func TestPostgres_CreateIndex(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
-
 	shared.RunCreateIndex(t, adapt(conn), defaultSuite)
 
 	// PostgreSQL-specific: verify the unique index appears in pg_indexes.
@@ -60,8 +54,6 @@ func TestPostgres_CreateIndex(t *testing.T) {
 func TestPostgres_CreateIndex_Partial(t *testing.T) {
 	t.Parallel()
 	conn := connectDB(t)
-	defer conn.Close(context.Background())
-
 	shared.RunCreateIndex_Partial(t, adapt(conn), defaultSuite)
 
 	// PostgreSQL-specific: verify the partial index appears in pg_indexes.
@@ -84,8 +76,6 @@ func TestPostgres_CreateIndex_Using(t *testing.T) {
 
 	ctx := context.Background()
 	conn := connectDB(t)
-	defer conn.Close(ctx)
-
 	_, _ = conn.Exec(ctx, `DROP TABLE IF EXISTS it_idx_using`)
 	t.Cleanup(func() {
 		_, _ = conn.Exec(ctx, `DROP TABLE IF EXISTS it_idx_using`)
@@ -132,8 +122,6 @@ func TestPostgres_CreateTable_ColumnConstraints(t *testing.T) {
 
 	ctx := context.Background()
 	conn := connectDB(t)
-	defer conn.Close(ctx)
-
 	_, _ = conn.Exec(ctx, `DROP TABLE IF EXISTS it_col_constraints`)
 	t.Cleanup(func() {
 		_, _ = conn.Exec(ctx, `DROP TABLE IF EXISTS it_col_constraints`)
