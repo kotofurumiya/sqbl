@@ -65,9 +65,17 @@ func openDB(t *testing.T) *sql.DB {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	if _, err := db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatalf("enable foreign_keys: %v", err)
 	}
+	// Close in t.Cleanup rather than a defer in each test, so that cleanups
+	// registered later by the test (e.g. DROP TABLE) still run on an open
+	// connection; cleanups run in reverse registration order.
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	})
 	return db
 }
 
@@ -90,211 +98,180 @@ var defaultSuite = shared.Suite{
 func TestSQLite_CRUD(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCRUD(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_ValueAsParameter(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_ValueAsParameter(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_StoredValue(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_StoredValue(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_LikeWildcardsInEqValue(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_LikeWildcardsInEqValue(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_QuotedIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_QuotedIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_OrderByIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_OrderByIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_TableNameIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_TableNameIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_SelectColumnIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_SelectColumnIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_AliasIdentifier(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_AliasIdentifier(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_CommentBasedPayloads(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_CommentBasedPayloads(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Injection_StackedInsertPayload(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunInjection_StackedInsertPayload(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_JoinWithAliases(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunJoinWithAliases(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Subquery(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunSubquery(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_SetOperations(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunSetOperations(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_CTEAndAggregation(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCTEAndAggregation(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Identifiers_ReservedKeywords(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunIdentifiers_ReservedKeywords(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Identifiers_MixedCase(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunIdentifiers_MixedCase(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Identifiers_EmbeddedDoubleQuote(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunIdentifiers_EmbeddedDoubleQuote(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_CreateTable(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_CreateTable_UniqueConstraint(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable_UniqueConstraint(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_CreateTable_ForeignKey(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable_ForeignKey(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_CreateTable_Check(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateTable_Check(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_CreateIndex(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateIndex(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_CreateIndex_Partial(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunCreateIndex_Partial(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Upsert_DoUpdateWhere(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunUpsert_DoUpdateWhere(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_Upsert_OnConflictWhere(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunUpsert_OnConflictWhere(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_FilteringAndPagination(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunFilteringAndPagination(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_RecursiveCTE(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunRecursiveCTE(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_SchemaEvolution(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
 	shared.RunSchemaEvolution(t, adapt(db), defaultSuite)
 }
 
 func TestSQLite_ReturningAndOrConflict(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	defer db.Close()
-
 	ctx := context.Background()
 	a := adapt(db)
 
