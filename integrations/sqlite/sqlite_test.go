@@ -395,3 +395,34 @@ func TestSQLite_IndexedParameters(t *testing.T) {
 			id, name, createdAt, updatedAt, "alice", "2026-01-01", "2026-01-01")
 	}
 }
+
+func TestSQLite_CreateTable_Strict(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	ctx := context.Background()
+	a := adapt(db)
+
+	if err := a.Exec(ctx,
+		defaultSuite.CreateTable("counters").
+			Column("id", "INTEGER", "PRIMARY KEY").
+			Column("hits", "INTEGER", "NOT NULL").
+			Options("STRICT, WITHOUT ROWID").
+			ToSql(),
+	); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := a.Exec(ctx, defaultSuite.DropTable("counters").ToSql()); err != nil {
+			t.Errorf("drop table: %v", err)
+		}
+	})
+
+	// A STRICT table rejects a value that does not match the column type.
+	err := a.Exec(ctx,
+		defaultSuite.InsertInto("counters").Columns("id", "hits").Values(sqblsqlite.P(1), sqblsqlite.P(2)).ToSql(),
+		1, "many",
+	)
+	if err == nil {
+		t.Fatal("insert of TEXT into a STRICT INTEGER column succeeded; want an error")
+	}
+}

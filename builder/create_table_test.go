@@ -205,3 +205,46 @@ func TestSqlCreateTableBuilder_ToSqlWithDialectUsesGivenDialect(t *testing.T) {
 		t.Errorf("got %q; want %q", got, want)
 	}
 }
+
+func TestSqlCreateTableBuilder_Options(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		b    builder.SqlCreateTableBuilder
+		want string
+	}{
+		{
+			name: "single option",
+			b:    newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("STRICT, WITHOUT ROWID"),
+			want: `CREATE TABLE "users" ("id" BIGINT) STRICT, WITHOUT ROWID;`,
+		},
+		{
+			name: "options are separated by spaces",
+			b:    newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("WITH (fillfactor = 70)", "TABLESPACE fast"),
+			want: `CREATE TABLE "users" ("id" BIGINT) WITH (fillfactor = 70) TABLESPACE fast;`,
+		},
+		{
+			name: "repeated calls append",
+			b:    newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("ENGINE=InnoDB").Options("COMMENT='users'"),
+			want: `CREATE TABLE "users" ("id" BIGINT) ENGINE=InnoDB COMMENT='users';`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.b.ToSql(); got != tt.want {
+				t.Errorf("got %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSqlCreateTableBuilder_OptionsDoNotShareState(t *testing.T) {
+	t.Parallel()
+	base := newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("A")
+	_ = base.Options("B")
+	got := base.Options("C").ToSql()
+	want := `CREATE TABLE "users" ("id" BIGINT) A C;`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}

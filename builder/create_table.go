@@ -26,6 +26,7 @@ type SqlCreateTableBuilder struct {
 	ifNotExists      bool
 	columns          []columnDef
 	tableConstraints []constraintFunc
+	options          []string
 }
 
 var _ SqlBuilder = SqlCreateTableBuilder{}
@@ -34,7 +35,7 @@ var _ SqlBuilder = SqlCreateTableBuilder{}
 //
 // The output follows this structure:
 //
-//	CREATE TABLE [IF NOT EXISTS] "table" (col_defs..., table_constraints...)
+//	CREATE TABLE [IF NOT EXISTS] "table" (col_defs..., table_constraints...) [options...]
 //
 // Column definitions are rendered as:
 //
@@ -109,6 +110,11 @@ func (b SqlCreateTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect
 	}
 
 	buf.WriteByte(')')
+
+	for _, opt := range b.options {
+		buf.WriteByte(' ')
+		buf.WriteString(opt)
+	}
 }
 
 // Dialect sets the SQL dialect.
@@ -126,6 +132,18 @@ func (b SqlCreateTableBuilder) Table(table string) SqlCreateTableBuilder {
 // IfNotExists adds IF NOT EXISTS to the CREATE TABLE statement.
 func (b SqlCreateTableBuilder) IfNotExists() SqlCreateTableBuilder {
 	b.ifNotExists = true
+	return b
+}
+
+// Options appends table options after the closing parenthesis.
+// Each option is written as-is, separated by a space. Calling Options again appends more options.
+// SQLite requires commas between options, so pass them as one string there.
+//
+//	.Options("STRICT, WITHOUT ROWID")  // SQLite:     ...) STRICT, WITHOUT ROWID
+//	.Options("ENGINE=InnoDB")          // MySQL:      ...) ENGINE=InnoDB
+//	.Options("WITH (fillfactor = 70)") // PostgreSQL: ...) WITH (fillfactor = 70)
+func (b SqlCreateTableBuilder) Options(opts ...string) SqlCreateTableBuilder {
+	b.options = append(append([]string(nil), b.options...), opts...)
 	return b
 }
 
