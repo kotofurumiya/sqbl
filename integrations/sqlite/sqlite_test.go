@@ -255,6 +255,20 @@ func TestSQLite_CreateIndex_Partial(t *testing.T) {
 	shared.RunCreateIndex_Partial(t, adapt(db), defaultSuite)
 }
 
+func TestSQLite_Upsert_DoUpdateWhere(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	defer db.Close()
+	shared.RunUpsert_DoUpdateWhere(t, adapt(db), defaultSuite)
+}
+
+func TestSQLite_Upsert_OnConflictWhere(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	defer db.Close()
+	shared.RunUpsert_OnConflictWhere(t, adapt(db), defaultSuite)
+}
+
 func TestSQLite_FilteringAndPagination(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)

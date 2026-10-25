@@ -210,6 +210,113 @@ func TestSqlInsertBuilder_OnConflictDoNothing_WithReturning(t *testing.T) {
 	}
 }
 
+func TestSqlInsertBuilder_DoUpdateWhere(t *testing.T) {
+	t.Parallel()
+	// PostgresDialect splits dotted names, so the qualified columns render as "users"."version".
+	got := (builder.SqlInsertBuilder{}).
+		Dialect(&dialect.PostgresDialect{}).
+		Into("users").
+		Columns("id", "name", "version").
+		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+		OnConflict("id").
+		DoUpdate(`"name" = excluded."name"`).
+		DoUpdateWhere(syntax.Lt("users.version", "excluded.version")).
+		Returning("id").
+		ToSql()
+	want := `INSERT INTO "users" ("id", "name", "version") VALUES ($1, $2, $3) ` +
+		`ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name" ` +
+		`WHERE "users"."version" < "excluded"."version" RETURNING "id";`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_DoUpdateWhere_WithParameter(t *testing.T) {
+	t.Parallel()
+	got := newInsertBuilder().
+		Into("users").
+		Columns("id", "name").
+		Values(syntax.P(1), syntax.P(2)).
+		OnConflict("id").
+		DoUpdate(`"name" = excluded."name"`).
+		DoUpdateWhere(syntax.Ne("name", syntax.P(3))).
+		ToSql()
+	want := `INSERT INTO "users" ("id", "name") VALUES (?1, ?2) ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name" WHERE "name" <> ?3;`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_OnConflictWhere_DoUpdate(t *testing.T) {
+	t.Parallel()
+	got := newInsertBuilder().
+		Into("users").
+		Columns("email", "name").
+		Values(syntax.P(1), syntax.P(2)).
+		OnConflict("email").
+		OnConflictWhere(syntax.Eq("active", 1)).
+		DoUpdate(`"name" = excluded."name"`).
+		ToSql()
+	want := `INSERT INTO "users" ("email", "name") VALUES (?1, ?2) ` +
+		`ON CONFLICT ("email") WHERE "active" = 1 DO UPDATE SET "name" = excluded."name";`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_OnConflictWhere_DoNothing(t *testing.T) {
+	t.Parallel()
+	got := newInsertBuilder().
+		Into("users").
+		Columns("email").
+		Values(syntax.P(1)).
+		OnConflict("email").
+		OnConflictWhere(syntax.Eq("active", 1)).
+		OnConflictDoNothing().
+		ToSql()
+	want := `INSERT INTO "users" ("email") VALUES (?1) ON CONFLICT ("email") WHERE "active" = 1 DO NOTHING;`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_OnConflictWhere_WithDoUpdateWhere(t *testing.T) {
+	t.Parallel()
+	got := (builder.SqlInsertBuilder{}).
+		Dialect(&dialect.PostgresDialect{}).
+		Into("users").
+		Columns("email", "name", "version").
+		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+		OnConflict("email").
+		OnConflictWhere(syntax.Eq("active", 1)).
+		DoUpdate(`"name" = excluded."name"`).
+		DoUpdateWhere(syntax.Lt("users.version", "excluded.version")).
+		ToSql()
+	want := `INSERT INTO "users" ("email", "name", "version") VALUES ($1, $2, $3) ` +
+		`ON CONFLICT ("email") WHERE "active" = 1 ` +
+		`DO UPDATE SET "name" = excluded."name" ` +
+		`WHERE "users"."version" < "excluded"."version";`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_OnConflictWhere_WithoutTarget(t *testing.T) {
+	t.Parallel()
+	// An index predicate is meaningless without target columns, so it is not rendered.
+	got := newInsertBuilder().
+		Into("users").
+		Columns("email").
+		Values(syntax.P(1)).
+		OnConflictWhere(syntax.Eq("active", 1)).
+		OnConflictDoNothing().
+		ToSql()
+	want := `INSERT INTO "users" ("email") VALUES (?1) ON CONFLICT DO NOTHING;`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
 func TestSqlInsertBuilder_OnDuplicateKeyUpdate(t *testing.T) {
 	t.Parallel()
 	got := (&builder.SqlInsertBuilder{}).

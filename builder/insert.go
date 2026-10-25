@@ -22,10 +22,12 @@ type SqlInsertBuilder struct {
 	orConflict       string // SQLite: "REPLACE", "IGNORE", "ABORT", "FAIL", "ROLLBACK"
 	columns          []string
 	rows             []syntax.ValueRow
-	conflictTarget   []string // columns for ON CONFLICT (col1, col2); nil means no conflict clause
-	conflictAction   string   // "NOTHING" or "UPDATE"
-	conflictSets     []string // raw SET fragments for DO UPDATE, e.g. "value = EXCLUDED.value"
-	duplicateKeySets []string // raw SET fragments for ON DUPLICATE KEY UPDATE (MySQL)
+	conflictTarget   []string           // columns for ON CONFLICT (col1, col2); nil means no conflict clause
+	conflictWhere    syntax.SqlFragment // index predicate after the conflict target (partial unique index)
+	conflictAction   string             // "NOTHING" or "UPDATE"
+	conflictSets     []string           // raw SET fragments for DO UPDATE, e.g. "value = EXCLUDED.value"
+	updateWhere      syntax.SqlFragment // condition after DO UPDATE SET
+	duplicateKeySets []string           // raw SET fragments for ON DUPLICATE KEY UPDATE (MySQL)
 	returning        []string
 }
 
@@ -110,37 +112,21 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	} else {
 		switch b.conflictAction {
 		case "NOTHING":
-			if len(b.conflictTarget) > 0 {
-				buf.WriteString(" ON CONFLICT (")
-				for i, col := range b.conflictTarget {
-					if i > 0 {
-						buf.WriteString(", ")
-					}
-					d.QuoteIdentifier(buf, col)
-				}
-				buf.WriteString(") DO NOTHING")
-			} else {
-				buf.WriteString(" ON CONFLICT DO NOTHING")
-			}
+			b.renderConflictTarget(buf, d)
+			buf.WriteString(" DO NOTHING")
 		case "UPDATE":
 			if len(b.conflictSets) > 0 {
-				buf.WriteString(" ON CONFLICT")
-				if len(b.conflictTarget) > 0 {
-					buf.WriteString(" (")
-					for i, col := range b.conflictTarget {
-						if i > 0 {
-							buf.WriteString(", ")
-						}
-						d.QuoteIdentifier(buf, col)
-					}
-					buf.WriteByte(')')
-				}
+				b.renderConflictTarget(buf, d)
 				buf.WriteString(" DO UPDATE SET ")
 				for i, s := range b.conflictSets {
 					if i > 0 {
 						buf.WriteString(", ")
 					}
 					buf.WriteString(s)
+				}
+				if b.updateWhere != nil {
+					buf.WriteString(" WHERE ")
+					b.updateWhere.AppendSQL(buf, d)
 				}
 			}
 		}
@@ -155,6 +141,26 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			}
 			d.QuoteIdentifier(buf, col)
 		}
+	}
+}
+
+// renderConflictTarget writes "ON CONFLICT [(cols) [WHERE pred]]" into buf.
+func (b SqlInsertBuilder) renderConflictTarget(buf *bytes.Buffer, d dialect.SqlDialect) {
+	buf.WriteString(" ON CONFLICT")
+	if len(b.conflictTarget) == 0 {
+		return
+	}
+	buf.WriteString(" (")
+	for i, col := range b.conflictTarget {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		d.QuoteIdentifier(buf, col)
+	}
+	buf.WriteByte(')')
+	if b.conflictWhere != nil {
+		buf.WriteString(" WHERE ")
+		b.conflictWhere.AppendSQL(buf, d)
 	}
 }
 
@@ -217,6 +223,38 @@ func (b SqlInsertBuilder) OnConflict(cols ...string) SqlInsertBuilder {
 func (b SqlInsertBuilder) DoUpdate(sets ...string) SqlInsertBuilder {
 	b.conflictAction = "UPDATE"
 	b.conflictSets = sets
+	return b
+}
+
+// OnConflictWhere adds an index predicate after the conflict target columns,
+// so that a partial unique index can be used as the conflict target.
+// It is rendered only when OnConflict has been given at least one column.
+// Supported by PostgreSQL and SQLite.
+//
+//	sqblpg.InsertInto("users").Columns("email", "name").Values(sqbl.P(1), sqbl.P(2)).
+//	    OnConflict("email").
+//	    OnConflictWhere(sqblpg.Eq("active", 1)).
+//	    DoUpdate(`"name" = excluded."name"`)
+func (b SqlInsertBuilder) OnConflictWhere(expr syntax.SqlFragment) SqlInsertBuilder {
+	b.conflictWhere = expr
+	return b
+}
+
+// DoUpdateWhere adds a WHERE condition to the DO UPDATE clause.
+// Conflicting rows that do not satisfy the condition are left unchanged.
+// Supported by PostgreSQL and SQLite.
+//
+// The row proposed for insertion is referred to as excluded. Write it in
+// lowercase when passing it as a plain string: the string is quoted as an
+// identifier, and PostgreSQL does not match a quoted "EXCLUDED".
+//
+//	sqblpg.InsertInto("users").Columns("id", "name", "version").
+//	    Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
+//	    OnConflict("id").
+//	    DoUpdate(`"name" = excluded."name"`, `"version" = excluded."version"`).
+//	    DoUpdateWhere(sqblpg.Lt("users.version", "excluded.version"))
+func (b SqlInsertBuilder) DoUpdateWhere(expr syntax.SqlFragment) SqlInsertBuilder {
+	b.updateWhere = expr
 	return b
 }
 
