@@ -38,11 +38,11 @@ func TestSqlDropTableBuilder_Cascade_PostgreSQL(t *testing.T) {
 	}
 }
 
-func TestSqlDropTableBuilder_Cascade_IgnoredForMySQL(t *testing.T) {
+func TestSqlDropTableBuilder_Cascade_AnyDialect(t *testing.T) {
 	t.Parallel()
+	// sqbl does not validate dialect support: CASCADE is rendered whenever requested.
 	got := newDropTableBuilder(&dialect.MysqlDialect{}).Cascade().ToSql()
-	// MySQL does not support CASCADE; it should be omitted
-	want := "DROP TABLE `users`;"
+	want := "DROP TABLE `users` CASCADE;"
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}

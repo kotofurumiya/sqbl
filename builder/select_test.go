@@ -649,15 +649,15 @@ func TestSqlSelectBuilder_DistinctOn(t *testing.T) {
 	}
 }
 
-func TestSqlSelectBuilder_DistinctOn_NonPostgres_Fallback(t *testing.T) {
+func TestSqlSelectBuilder_DistinctOn_AnyDialect(t *testing.T) {
 	t.Parallel()
-	// Non-PostgreSQL dialects ignore DistinctOn and use plain SELECT.
+	// sqbl does not validate dialect support: DISTINCT ON is rendered whenever requested.
 	got := newBuilder().
 		From("orders").
 		Select("user_id").
 		DistinctOn("user_id").
 		ToSql()
-	want := `SELECT "user_id" FROM "orders";`
+	want := `SELECT DISTINCT ON ("user_id") "user_id" FROM "orders";`
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}

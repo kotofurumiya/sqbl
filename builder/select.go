@@ -114,21 +114,16 @@ func (b SqlSelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	}
 
 	// SELECT [DISTINCT [ON (col1, col2)]]
-	// DISTINCT ON is PostgreSQL-only; fall back to plain SELECT on other dialects.
 	switch {
 	case len(b.distinctOn) > 0:
-		if _, isPg := d.(*dialect.PostgresDialect); isPg {
-			buf.WriteString("SELECT DISTINCT ON (")
-			for i, col := range b.distinctOn {
-				if i > 0 {
-					buf.WriteString(", ")
-				}
-				d.QuoteIdentifier(buf, col)
+		buf.WriteString("SELECT DISTINCT ON (")
+		for i, col := range b.distinctOn {
+			if i > 0 {
+				buf.WriteString(", ")
 			}
-			buf.WriteByte(')')
-		} else {
-			buf.WriteString("SELECT")
+			d.QuoteIdentifier(buf, col)
 		}
+		buf.WriteByte(')')
 	case b.distinct:
 		buf.WriteString("SELECT DISTINCT")
 	default:
@@ -311,7 +306,7 @@ func (b SqlSelectBuilder) Distinct() SqlSelectBuilder {
 	return b
 }
 
-// DistinctOn sets the DISTINCT ON columns (PostgreSQL only).
+// DistinctOn sets the DISTINCT ON columns. Supported by PostgreSQL.
 // Rows are deduplicated based on the specified columns; the first row for each group is kept.
 // ORDER BY should be used to control which row is considered "first".
 //

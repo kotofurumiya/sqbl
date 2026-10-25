@@ -407,17 +407,47 @@ func TestSqlInsertBuilder_SQLiteReturning(t *testing.T) {
 	}
 }
 
-func TestSqlInsertBuilder_OrReplace_NonSQLiteDialect(t *testing.T) {
+func TestSqlInsertBuilder_OrReplace_AnyDialect(t *testing.T) {
 	t.Parallel()
-	// OrReplace/OrIgnore are silently ignored for non-SQLite dialects.
+	// sqbl does not validate dialect support: OR REPLACE is rendered whenever requested.
 	got := newInsertBuilder().
 		Into("users").
 		Columns("id", "name").
 		Values(syntax.P(1), syntax.P(2)).
 		OrReplace().
 		ToSql()
-	want := `INSERT INTO "users" ("id", "name") VALUES (?1, ?2);`
+	want := `INSERT OR REPLACE INTO "users" ("id", "name") VALUES (?1, ?2);`
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+// Custom dialects that embed a built-in dialect must render the same clauses.
+type (
+	embeddedSqlite struct{ dialect.SqliteDialect }
+	embeddedMysql  struct{ dialect.MysqlDialect }
+)
+
+func TestSqlInsertBuilder_CustomDialect(t *testing.T) {
+	t.Parallel()
+	b := (builder.SqlInsertBuilder{}).Into("t").Columns("a").Values(1)
+
+	tests := []struct {
+		name  string
+		b     builder.SqlInsertBuilder
+		embed dialect.SqlDialect
+		base  dialect.SqlDialect
+	}{
+		{name: "OrIgnore", b: b.OrIgnore(), embed: &embeddedSqlite{}, base: &dialect.SqliteDialect{}},
+		{name: "OnDuplicateKeyUpdate", b: b.OnDuplicateKeyUpdate("a = a + 1"), embed: &embeddedMysql{}, base: &dialect.MysqlDialect{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.b.ToSqlWithDialect(tt.embed)
+			want := tt.b.ToSqlWithDialect(tt.base)
+			if got != want {
+				t.Errorf("custom dialect = %q; built-in = %q", got, want)
+			}
+		})
 	}
 }

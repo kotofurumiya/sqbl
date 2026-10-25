@@ -65,17 +65,16 @@ func RunSchemaEvolution(t testing.TB, conn Conn, s Suite) {
 	}
 
 	// 5. Create an index on name.
-	// On(table) is required by MySQL and silently ignored by PostgreSQL/SQLite.
 	mustExec(t, conn, ctx, "create index",
 		s.CreateIndex(index).On(table).Columns("name").ToSql(),
 	)
 
 	// 6. Drop the index.
-	// IfExists() is applied for PostgreSQL/SQLite; MySQL ignores it.
-	// On(table) is required by MySQL.
-	mustExec(t, conn, ctx, "drop index",
-		s.DropIndex(index).On(table).IfExists().ToSql(),
-	)
+	dropIndex := s.DropIndex(index).IfExists()
+	if s.DropIndexOnTable {
+		dropIndex = dropIndex.On(table)
+	}
+	mustExec(t, conn, ctx, "drop index", dropIndex.ToSql())
 
 	// 7. Drop the table itself.
 	mustExec(t, conn, ctx, "drop table",

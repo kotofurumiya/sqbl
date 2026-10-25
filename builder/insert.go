@@ -53,11 +53,8 @@ func (b SqlInsertBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 
 func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	// INSERT [OR conflict] INTO table
-	_, isMysql := d.(*dialect.MysqlDialect)
-	_, isSqlite := d.(*dialect.SqliteDialect)
-
 	buf.WriteString("INSERT")
-	if isSqlite && b.orConflict != "" {
+	if b.orConflict != "" {
 		buf.WriteString(" OR ")
 		buf.WriteString(b.orConflict)
 	}
@@ -97,37 +94,35 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 		}
 	}
 
-	// ON CONFLICT (PostgreSQL/SQLite) or ON DUPLICATE KEY UPDATE (MySQL)
-	if isMysql {
-		if len(b.duplicateKeySets) > 0 {
-			buf.WriteString(" ON DUPLICATE KEY UPDATE ")
-			for i, s := range b.duplicateKeySets {
+	// ON CONFLICT ... and ON DUPLICATE KEY UPDATE ... are independent clauses;
+	// each is rendered when its methods were called.
+	switch b.conflictAction {
+	case "NOTHING":
+		b.renderConflictTarget(buf, d)
+		buf.WriteString(" DO NOTHING")
+	case "UPDATE":
+		if len(b.conflictSets) > 0 {
+			b.renderConflictTarget(buf, d)
+			buf.WriteString(" DO UPDATE SET ")
+			for i, s := range b.conflictSets {
 				if i > 0 {
 					buf.WriteString(", ")
 				}
 				buf.WriteString(s)
 			}
-		}
-	} else {
-		switch b.conflictAction {
-		case "NOTHING":
-			b.renderConflictTarget(buf, d)
-			buf.WriteString(" DO NOTHING")
-		case "UPDATE":
-			if len(b.conflictSets) > 0 {
-				b.renderConflictTarget(buf, d)
-				buf.WriteString(" DO UPDATE SET ")
-				for i, s := range b.conflictSets {
-					if i > 0 {
-						buf.WriteString(", ")
-					}
-					buf.WriteString(s)
-				}
-				if b.updateWhere != nil {
-					buf.WriteString(" WHERE ")
-					b.updateWhere.AppendSQL(buf, d)
-				}
+			if b.updateWhere != nil {
+				buf.WriteString(" WHERE ")
+				b.updateWhere.AppendSQL(buf, d)
 			}
+		}
+	}
+	if len(b.duplicateKeySets) > 0 {
+		buf.WriteString(" ON DUPLICATE KEY UPDATE ")
+		for i, s := range b.duplicateKeySets {
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+			buf.WriteString(s)
 		}
 	}
 
@@ -258,7 +253,7 @@ func (b SqlInsertBuilder) DoUpdateWhere(expr syntax.SqlFragment) SqlInsertBuilde
 	return b
 }
 
-// OnDuplicateKeyUpdate adds an ON DUPLICATE KEY UPDATE clause (MySQL only).
+// OnDuplicateKeyUpdate adds an ON DUPLICATE KEY UPDATE clause. Supported by MySQL.
 // Each argument is a raw SQL assignment fragment, e.g. "value = VALUES(value)".
 //
 //	sqblmysql.InsertInto("tags").Columns("name", "count").Values(sqbl.P(1), sqbl.P(2)).
@@ -268,35 +263,35 @@ func (b SqlInsertBuilder) OnDuplicateKeyUpdate(sets ...string) SqlInsertBuilder 
 	return b
 }
 
-// OrReplace sets the INSERT OR REPLACE conflict algorithm (SQLite only).
+// OrReplace sets the INSERT OR REPLACE conflict algorithm. Supported by SQLite.
 // Existing rows that conflict are deleted and replaced by the new row.
 func (b SqlInsertBuilder) OrReplace() SqlInsertBuilder {
 	b.orConflict = "REPLACE"
 	return b
 }
 
-// OrIgnore sets the INSERT OR IGNORE conflict algorithm (SQLite only).
+// OrIgnore sets the INSERT OR IGNORE conflict algorithm. Supported by SQLite.
 // Rows that violate a constraint are silently discarded.
 func (b SqlInsertBuilder) OrIgnore() SqlInsertBuilder {
 	b.orConflict = "IGNORE"
 	return b
 }
 
-// OrAbort sets the INSERT OR ABORT conflict algorithm (SQLite only).
+// OrAbort sets the INSERT OR ABORT conflict algorithm. Supported by SQLite.
 // The current INSERT statement is aborted and changes are rolled back.
 func (b SqlInsertBuilder) OrAbort() SqlInsertBuilder {
 	b.orConflict = "ABORT"
 	return b
 }
 
-// OrFail sets the INSERT OR FAIL conflict algorithm (SQLite only).
+// OrFail sets the INSERT OR FAIL conflict algorithm. Supported by SQLite.
 // The INSERT fails with an error but prior changes in the same transaction are retained.
 func (b SqlInsertBuilder) OrFail() SqlInsertBuilder {
 	b.orConflict = "FAIL"
 	return b
 }
 
-// OrRollback sets the INSERT OR ROLLBACK conflict algorithm (SQLite only).
+// OrRollback sets the INSERT OR ROLLBACK conflict algorithm. Supported by SQLite.
 // The entire transaction is rolled back on conflict.
 func (b SqlInsertBuilder) OrRollback() SqlInsertBuilder {
 	b.orConflict = "ROLLBACK"
@@ -305,7 +300,7 @@ func (b SqlInsertBuilder) OrRollback() SqlInsertBuilder {
 
 // Returning adds a RETURNING clause to the INSERT statement.
 // The specified columns are returned for each inserted row.
-// Supported by PostgreSQL and SQLite 3.35+. Ignored for MySQL.
+// Supported by PostgreSQL, SQLite 3.35+, and MariaDB 10.5+.
 //
 //	sqblpg.InsertInto("users").Columns("name").Values(sqbl.P(1)).Returning("id", "created_at")
 func (b SqlInsertBuilder) Returning(cols ...string) SqlInsertBuilder {
