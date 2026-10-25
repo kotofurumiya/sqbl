@@ -95,3 +95,19 @@ func AlterTable(table string) builder.SqlAlterTableBuilder {
 	var b builder.SqlAlterTableBuilder
 	return b.Dialect(&dialect.PostgresDialect{}).Table(table)
 }
+
+// CreateDatabase starts a CREATE DATABASE builder for the given database name.
+//
+//	sqblpg.CreateDatabase("app_test")
+func CreateDatabase(name string) builder.SqlCreateDatabaseBuilder {
+	var b builder.SqlCreateDatabaseBuilder
+	return b.Dialect(&dialect.PostgresDialect{}).Name(name)
+}
+
+// DropDatabase starts a DROP DATABASE builder for the given database name.
+//
+//	sqblpg.DropDatabase("app_test").IfExists()
+func DropDatabase(name string) builder.SqlDropDatabaseBuilder {
+	var b builder.SqlDropDatabaseBuilder
+	return b.Dialect(&dialect.PostgresDialect{}).Name(name)
+}

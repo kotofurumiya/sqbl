@@ -83,7 +83,7 @@ Both panic when there is no dialect to render with: `ToSql()` on a builder witho
 
 State is accumulated independently of method call order and rendered at the end by a single `renderSQL` pass. `Select(...).From(...)` and `From(...).Select(...)` produce identical output.
 
-Builders: `SqlSelectBuilder`, `SqlInsertBuilder`, `SqlUpdateBuilder`, `SqlDeleteBuilder`, `SqlCreateTableBuilder`, `SqlCreateIndexBuilder`, `SqlDropTableBuilder`, `SqlDropIndexBuilder`, `SqlAlterTableBuilder`.
+Builders: `SqlSelectBuilder`, `SqlInsertBuilder`, `SqlUpdateBuilder`, `SqlDeleteBuilder`, `SqlCreateTableBuilder`, `SqlCreateIndexBuilder`, `SqlDropTableBuilder`, `SqlDropIndexBuilder`, `SqlAlterTableBuilder`, `SqlCreateDatabaseBuilder`, `SqlDropDatabaseBuilder`.
 
 ---
 
@@ -101,4 +101,4 @@ Dialect-free entry points for code that targets several databases.
 Convenience packages. Each has two files:
 
 - `sqblXXX.go` — entry point functions (`From`, `Select`, `InsertInto`, `Update`, `DeleteFrom`, `CreateTable`, etc.) that wire the appropriate dialect and return a typed builder
-- `reexport.go` — re-exports `syntax` helpers (`Eq`, `And`, `In`, `Asc`, `P`, `Fn`, `Over`, etc.) so users only need to import one package; DB-specific functions are intentionally omitted where not applicable (e.g. `ILike` is only in `sqblpg`, and `sqblsqlite` has no `AsColumns`)
+- `reexport.go` — re-exports `syntax` helpers (`Eq`, `And`, `In`, `Asc`, `P`, `Fn`, `Over`, etc.) so users only need to import one package; DB-specific functions are intentionally omitted where not applicable (e.g. `ILike` is only in `sqblpg`, and `sqblsqlite` has no `AsColumns`, `CreateDatabase`, or `DropDatabase`)

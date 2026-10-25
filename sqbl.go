@@ -92,3 +92,19 @@ func AlterTable(table string) builder.SqlAlterTableBuilder {
 	var b builder.SqlAlterTableBuilder
 	return b.Table(table)
 }
+
+// CreateDatabase starts a CREATE DATABASE builder for the given database name.
+//
+//	sqbl.CreateDatabase("app_test")
+func CreateDatabase(name string) builder.SqlCreateDatabaseBuilder {
+	var b builder.SqlCreateDatabaseBuilder
+	return b.Name(name)
+}
+
+// DropDatabase starts a DROP DATABASE builder for the given database name.
+//
+//	sqbl.DropDatabase("app_test").IfExists()
+func DropDatabase(name string) builder.SqlDropDatabaseBuilder {
+	var b builder.SqlDropDatabaseBuilder
+	return b.Name(name)
+}
