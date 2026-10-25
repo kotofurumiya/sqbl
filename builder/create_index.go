@@ -34,8 +34,9 @@ var _ SqlBuilder = SqlCreateIndexBuilder{}
 
 // ToSql renders the CREATE INDEX statement with a trailing semicolon.
 func (b SqlCreateIndexBuilder) ToSql() string {
+	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, b.dialect)
+	b.renderSQL(buf, d)
 	buf.WriteByte(';')
 	s := buf.String()
 	sqlbuf.PutStringBuffer(buf)
@@ -44,6 +45,7 @@ func (b SqlCreateIndexBuilder) ToSql() string {
 
 // ToSqlWithDialect renders the CREATE INDEX statement without a trailing semicolon.
 func (b SqlCreateIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
 	s := buf.String()

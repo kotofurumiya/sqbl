@@ -34,8 +34,9 @@ var _ SqlBuilder = SqlUpdateBuilder{}
 
 // ToSql renders the UPDATE statement with a trailing semicolon.
 func (b SqlUpdateBuilder) ToSql() string {
+	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, b.dialect)
+	b.renderSQL(buf, d)
 	buf.WriteByte(';')
 	s := buf.String()
 	sqlbuf.PutStringBuffer(buf)
@@ -44,6 +45,7 @@ func (b SqlUpdateBuilder) ToSql() string {
 
 // ToSqlWithDialect renders the UPDATE statement using the given dialect, without a trailing semicolon.
 func (b SqlUpdateBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
 	s := buf.String()

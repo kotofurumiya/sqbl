@@ -34,8 +34,9 @@ var _ SqlBuilder = SqlInsertBuilder{}
 
 // ToSql renders the INSERT statement with a trailing semicolon.
 func (b SqlInsertBuilder) ToSql() string {
+	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, b.dialect)
+	b.renderSQL(buf, d)
 	buf.WriteByte(';')
 	s := buf.String()
 	sqlbuf.PutStringBuffer(buf)
@@ -44,6 +45,7 @@ func (b SqlInsertBuilder) ToSql() string {
 
 // ToSqlWithDialect renders the INSERT statement using the given dialect, without a trailing semicolon.
 func (b SqlInsertBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
 	s := buf.String()

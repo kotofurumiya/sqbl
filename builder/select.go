@@ -59,8 +59,9 @@ var _ SqlBuilder = SqlSelectBuilder{}
 //
 //	sql := sqblpg.From("users").Select("id").ToSql()
 func (b SqlSelectBuilder) ToSql() string {
+	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, b.dialect)
+	b.renderSQL(buf, d)
 	buf.WriteByte(';')
 	s := buf.String()
 	sqlbuf.PutStringBuffer(buf)
@@ -70,6 +71,7 @@ func (b SqlSelectBuilder) ToSql() string {
 // ToSqlWithDialect renders the statement using the given dialect, without a trailing semicolon.
 // Implements SqlBuilder.
 func (b SqlSelectBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
 	s := buf.String()
