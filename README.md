@@ -96,6 +96,25 @@ func main() {
 }
 ```
 
+## Multiple Dialects
+
+Build once with the root `sqbl` package, then render for each database with `ToSqlWithDialect`.
+
+```go
+import (
+  "github.com/kotofurumiya/sqbl"
+  "github.com/kotofurumiya/sqbl/dialect"
+)
+
+q := sqbl.From("users").Select("id").Where(sqbl.Eq("id", sqbl.P(1)))
+
+q.ToSqlWithDialect(&dialect.PostgresDialect{}) // SELECT "id" FROM "users" WHERE "id" = $1
+q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?
+```
+
+- Builders from the root package have no dialect, so `ToSql()` panics on them.
+- sqbl renders every clause you ask for. Branch in your own code for clauses that only some databases support, such as `ForUpdate()`.
+
 ## Identifiers, Values, and Raw SQL
 
 A plain string passed where an expression is expected is always an identifier.

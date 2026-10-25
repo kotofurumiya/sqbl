@@ -1,7 +1,8 @@
 # Architecture
 
-sqbl is structured in four layers, each with a distinct responsibility:
+sqbl is structured in five layers, each with a distinct responsibility:
 
+- `sqbl` (root) — dialect-free entry points; depends on `builder` and `syntax`
 - `sqblpg` / `sqblmysql` / `sqblsqlite` — DB-specific entry points; depend on `builder` and `dialect`
 - `builder` — assembles and renders SQL statements; depends on `syntax` and `dialect`
 - `syntax` — SQL fragment types; depends on `dialect`
@@ -75,11 +76,22 @@ type SqlBuilder interface {
 
 `ToSql()` renders with a trailing semicolon using the builder's own dialect. `ToSqlWithDialect(d)` renders without a semicolon using the given dialect.
 
+Both panic when there is no dialect to render with: `ToSql()` on a builder without a dialect, or `ToSqlWithDialect(nil)`. A missing dialect is a programming error that shows up on the first render, so it is not reported through an error return on every call.
+
 `SqlSelectBuilder` additionally implements `SqlFragment` via `AppendSQL`, which writes the query wrapped in parentheses. This is what makes it embeddable as a subquery in `From`, `Join`, and `In`.
 
 State is accumulated independently of method call order and rendered at the end by a single `renderSQL` pass. `Select(...).From(...)` and `From(...).Select(...)` produce identical output.
 
 Builders: `SqlSelectBuilder`, `SqlInsertBuilder`, `SqlUpdateBuilder`, `SqlDeleteBuilder`, `SqlCreateTableBuilder`, `SqlCreateIndexBuilder`, `SqlDropTableBuilder`, `SqlDropIndexBuilder`, `SqlAlterTableBuilder`.
+
+---
+
+## sqbl (root)
+
+Dialect-free entry points for code that targets several databases.
+
+- `sqbl.go` — the same entry point functions as the dialect packages, returning builders with no dialect. Render them with `ToSqlWithDialect`.
+- `reexport.go` — re-exports every `syntax` helper, including DB-specific ones such as `ILike`, since the root package is not tied to a database.
 
 ---
 

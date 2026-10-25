@@ -25,8 +25,9 @@ var _ SqlBuilder = SqlDeleteBuilder{}
 
 // ToSql renders the DELETE statement with a trailing semicolon.
 func (b SqlDeleteBuilder) ToSql() string {
+	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, b.dialect)
+	b.renderSQL(buf, d)
 	buf.WriteByte(';')
 	s := buf.String()
 	sqlbuf.PutStringBuffer(buf)
@@ -35,6 +36,7 @@ func (b SqlDeleteBuilder) ToSql() string {
 
 // ToSqlWithDialect renders the DELETE statement using the given dialect, without a trailing semicolon.
 func (b SqlDeleteBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
 	s := buf.String()

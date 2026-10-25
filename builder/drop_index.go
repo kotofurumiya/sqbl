@@ -23,8 +23,9 @@ var _ SqlBuilder = SqlDropIndexBuilder{}
 
 // ToSql renders the DROP INDEX statement with a trailing semicolon.
 func (b SqlDropIndexBuilder) ToSql() string {
+	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, b.dialect)
+	b.renderSQL(buf, d)
 	buf.WriteByte(';')
 	s := buf.String()
 	sqlbuf.PutStringBuffer(buf)
@@ -33,6 +34,7 @@ func (b SqlDropIndexBuilder) ToSql() string {
 
 // ToSqlWithDialect renders the DROP INDEX statement using the given dialect, without a trailing semicolon.
 func (b SqlDropIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
 	s := buf.String()

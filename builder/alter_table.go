@@ -33,8 +33,9 @@ var _ SqlBuilder = SqlAlterTableBuilder{}
 
 // ToSql renders the ALTER TABLE statement with a trailing semicolon.
 func (b SqlAlterTableBuilder) ToSql() string {
+	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, b.dialect)
+	b.renderSQL(buf, d)
 	buf.WriteByte(';')
 	s := buf.String()
 	sqlbuf.PutStringBuffer(buf)
@@ -43,6 +44,7 @@ func (b SqlAlterTableBuilder) ToSql() string {
 
 // ToSqlWithDialect renders the ALTER TABLE statement using the given dialect, without a trailing semicolon.
 func (b SqlAlterTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
 	s := buf.String()
