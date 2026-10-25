@@ -27,7 +27,7 @@ func main() {
 	// WHERE "id" IN (SELECT "user_id" FROM "orders" WHERE "status" = 'paid');
 	paidUsersSub := sqbl.From("orders").
 		Select("user_id").
-		Where(sqbl.Eq("status", "'paid'"))
+		Where(sqbl.Eq("status", sqbl.Raw("'paid'")))
 	sql2 := sqbl.From("users").
 		Select("id", "name").
 		Where(sqbl.In("id", paidUsersSub)).
@@ -38,7 +38,7 @@ func main() {
 	// SELECT "id", "name" FROM "users" WHERE "role" = 'admin'
 	// UNION
 	// SELECT "id", "name" FROM "users" WHERE "created_at" > $1;
-	admins := sqbl.From("users").Select("id", "name").Where(sqbl.Eq("role", "'admin'"))
+	admins := sqbl.From("users").Select("id", "name").Where(sqbl.Eq("role", sqbl.Raw("'admin'")))
 	newUsers := sqbl.From("users").Select("id", "name").Where(sqbl.Gt("created_at", sqbl.P(1)))
 	sql3 := admins.Union(newUsers).ToSql()
 	fmt.Println(sql3)

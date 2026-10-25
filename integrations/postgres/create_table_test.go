@@ -132,7 +132,7 @@ func TestPostgres_CreateTable_ColumnConstraints(t *testing.T) {
 		Column("code", "TEXT", "NOT NULL", "UNIQUE").
 		Column("status", "TEXT", "NOT NULL", "DEFAULT 'active'").
 		PrimaryKey("id").
-		Check(syntax.Eq("status", "'active'")).
+		Check(syntax.Eq("status", sqblpg.Raw("'active'"))).
 		ToSql()
 
 	if _, err := conn.Exec(ctx, createSQL); err != nil {

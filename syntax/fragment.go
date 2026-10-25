@@ -8,61 +8,99 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-// isSimpleIdentifier reports whether s should be treated as an identifier
-// (quoted via QuoteIdentifier) rather than a raw SQL expression (passed through as-is).
-//
-// Characters that indicate a SQL expression rather than an identifier:
-//   - '(' — function calls such as COUNT(*), SUM(amount), NOW()
-//   - '\” — string literals such as 'value', '2025-01-01'
-//
-// Special tokens that are always passed through as-is:
-//   - '*' — the wildcard token used in COUNT(*) and SELECT *
-//
-// Spaces are intentionally NOT excluded: SQL identifiers may legally contain
-// spaces when quoted (e.g. "my column"), so a space is not a reliable signal
-// that a string is an expression rather than an identifier name.
-func isSimpleIdentifier(s string) bool {
-	if s == "*" {
-		return false
-	}
-	return !strings.ContainsAny(s, "('")
-}
-
 // SqlFragment is a type that can render itself into a SQL buffer for a given dialect.
 type SqlFragment interface {
 	AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect)
 }
 
-var _ SqlFragment = StringExpr("")
+var (
+	_ SqlFragment = Ident("")
+	_ SqlFragment = Raw("")
+)
 
-// StringExpr is a SqlFragment backed by a plain string.
-// Simple identifiers (no parentheses or quotes) are quoted by the dialect;
-// expressions such as "COUNT(*)" are passed through as-is.
-type StringExpr string
+// Ident is an identifier such as a column or table name.
+// It is quoted by the dialect, and each dot-separated part is quoted separately,
+// so a name that itself contains a dot cannot be expressed with Ident.
+// A plain string passed where an expression is expected is treated as an Ident.
+//
+// "*" is written as-is, and a trailing ".*" is kept unquoted.
+//
+//	syntax.Ident("users.id") // "users"."id"
+//	syntax.Ident("u.*")      // "u".*
+type Ident string
 
-// NewStringExpr creates a StringExpr from a plain SQL string or identifier.
-func NewStringExpr(s string) StringExpr {
-	return StringExpr(s)
-}
-
-// AppendSQL implements SqlFragment. Simple identifiers are quoted; expressions are written as-is.
-func (s StringExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	if isSimpleIdentifier(string(s)) {
-		d.QuoteIdentifier(buf, string(s))
-	} else {
-		buf.WriteString(string(s))
+// AppendSQL implements SqlFragment, writing the quoted identifier into buf.
+func (i Ident) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	s := string(i)
+	if s == "*" {
+		buf.WriteByte('*')
+		return
 	}
+	if table, ok := strings.CutSuffix(s, ".*"); ok {
+		d.QuoteIdentifier(buf, table)
+		buf.WriteString(".*")
+		return
+	}
+	d.QuoteIdentifier(buf, s)
 }
 
-// ToFragment converts an arbitrary value to a SqlFragment.
+// Raw is a SQL fragment written as-is, without quoting or escaping.
+// Never build a Raw from untrusted input; pass values with P instead.
+//
+//	syntax.Raw("n + 1")
+//	syntax.Raw("'pending'")
+type Raw string
+
+// AppendSQL implements SqlFragment, writing the string into buf unchanged.
+func (r Raw) AppendSQL(buf *bytes.Buffer, _ dialect.SqlDialect) {
+	buf.WriteString(string(r))
+}
+
+// boolValue is a boolean literal rendered with the dialect's representation.
+type boolValue bool
+
+// AppendSQL implements SqlFragment, writing the dialect's boolean literal into buf.
+func (b boolValue) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	d.Bool(buf, bool(b))
+}
+
+// ToFragment converts a value accepted by expression arguments to a SqlFragment.
+// See AppendValue for how each type is interpreted.
 func ToFragment(v any) SqlFragment {
 	switch v := v.(type) {
 	case SqlFragment:
 		return v
 	case string:
-		return NewStringExpr(v)
+		return Ident(v)
+	case bool:
+		return boolValue(v)
+	case nil:
+		return Raw("NULL")
 	default:
-		return NewStringExpr(fmt.Sprint(v))
+		return Raw(fmt.Sprint(v))
+	}
+}
+
+// AppendValue writes a value accepted by expression arguments into buf.
+//   - SqlFragment: rendered by its own AppendSQL.
+//   - string: an identifier (same as Ident). Use Raw for SQL text and P for values.
+//   - bool: the dialect's boolean literal.
+//   - nil: NULL.
+//   - anything else: formatted with fmt, e.g. numbers.
+//
+// It is equivalent to ToFragment(v).AppendSQL(buf, d) without the allocation.
+func AppendValue(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
+	switch v := v.(type) {
+	case SqlFragment:
+		v.AppendSQL(buf, d)
+	case string:
+		Ident(v).AppendSQL(buf, d)
+	case bool:
+		d.Bool(buf, v)
+	case nil:
+		buf.WriteString("NULL")
+	default:
+		fmt.Fprint(buf, v)
 	}
 }
 
@@ -112,9 +150,11 @@ func Desc(col string) Order {
 
 // As creates an aliased expression for use in Select(), From(), or Join().
 //
-//	syntax.As("users", "u")                   // users AS u
-//	syntax.As("SUM(p.amount)", "total_spent") // SUM(p.amount) AS total_spent
-//	syntax.As(subquery, "sub")                // (SELECT ...) AS sub
+// The source accepts the same values as AppendValue; the alias is quoted as a single identifier.
+//
+//	syntax.As("users", "u")                                 // "users" AS "u"
+//	syntax.As(syntax.Fn("SUM", "p.amount"), "total_spent") // SUM("p"."amount") AS "total_spent"
+//	syntax.As(subquery, "sub")                              // (SELECT ...) AS "sub"
 func As(source any, alias string) Aliased {
 	return Aliased{Source: ToFragment(source), Alias: alias}
 }

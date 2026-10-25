@@ -2,10 +2,23 @@ package sqblsqlite
 
 import "github.com/kotofurumiya/sqbl/syntax"
 
+// Ident is an identifier such as a column or table name. It is quoted, and
+// each dot-separated part is quoted separately. A plain string passed where an
+// expression is expected is treated the same way.
+//
+//	sqblsqlite.Ident("users.id")
+type Ident = syntax.Ident
+
+// Raw is a SQL fragment written as-is. Never build it from untrusted input.
+//
+//	sqblsqlite.Raw("n + 1")
+//	sqblsqlite.Raw("'pending'")
+type Raw = syntax.Raw
+
 // As creates an aliased expression for use in Select(), From(), or Join().
 //
 //	sqblsqlite.As("users", "u")                   // users AS u
-//	sqblsqlite.As("SUM(p.amount)", "total_spent") // SUM(p.amount) AS total_spent
+//	sqblsqlite.As(sqblsqlite.Fn("SUM", "amount"), "total") // SUM(amount) AS total
 //	sqblsqlite.As(subquery, "sub")                // (SELECT ...) AS sub
 func As(source any, alias string) syntax.Aliased {
 	return syntax.As(source, alias)
@@ -13,14 +26,15 @@ func As(source any, alias string) syntax.Aliased {
 
 // Eq returns a = comparison expression.
 //
-//	sqblsqlite.Eq("status", "active") // status = active
+//	sqblsqlite.Eq("status", sqblsqlite.P(1)) // status = <param>
+//	sqblsqlite.Eq("u.id", "o.user_id")   // u.id = o.user_id (a plain string is an identifier)
 func Eq(left any, right any) syntax.ComparisonExpr {
 	return syntax.Eq(left, right)
 }
 
 // Ne returns a <> comparison expression.
 //
-//	sqblsqlite.Ne("status", "deleted") // status <> deleted
+//	sqblsqlite.Ne("status", sqblsqlite.P(1)) // status <> <param>
 func Ne(left any, right any) syntax.ComparisonExpr {
 	return syntax.Ne(left, right)
 }
@@ -63,8 +77,8 @@ func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
 
 // Or combines multiple expressions with OR.
 //
-//	sqblsqlite.Or(sqblsqlite.Eq("role", "admin"), sqblsqlite.Eq("role", "moderator"))
-//	// role = admin OR role = moderator
+//	sqblsqlite.Or(sqblsqlite.Eq("role", sqblsqlite.P(1)), sqblsqlite.Eq("role", sqblsqlite.P(2)))
+//	// role = <param> OR role = <param>
 func Or(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
 	return syntax.Or(exprs...)
 }
@@ -93,15 +107,15 @@ func Not(expr syntax.SqlFragment) syntax.NotExpr {
 
 // In returns an IN expression.
 //
-//	sqblsqlite.In("status", "'active'", "'pending'")
-//	// status IN ('active', 'pending')
+//	sqblsqlite.In("status", sqblsqlite.P(1), sqblsqlite.P(2))
+//	// status IN (<param>, <param>)
 func In(left any, values ...any) syntax.InExpr {
 	return syntax.In(left, values...)
 }
 
 // NotIn returns a NOT IN expression.
 //
-//	sqblsqlite.NotIn("status", "'deleted'", "'banned'")
+//	sqblsqlite.NotIn("status", sqblsqlite.Raw("'deleted'"), sqblsqlite.Raw("'banned'"))
 //	// status NOT IN ('deleted', 'banned')
 func NotIn(left any, values ...any) syntax.InExpr {
 	return syntax.NotIn(left, values...)
@@ -132,11 +146,11 @@ func Between(col any, low, high any) syntax.BetweenExpr {
 }
 
 // Like returns a LIKE comparison expression.
-// The pattern should be a SQL string literal including quotes (e.g. "'%foo%'").
+// The pattern accepts the same values as Eq; pass it with P, or with Raw for a literal.
 //
-//	sqblsqlite.Like("name", "'%foo%'")
+//	sqblsqlite.Like("name", sqblsqlite.Raw("'%foo%'"))
 //	// name LIKE '%foo%'
-func Like(left any, pattern string) syntax.ComparisonExpr {
+func Like(left any, pattern any) syntax.ComparisonExpr {
 	return syntax.Like(left, pattern)
 }
 

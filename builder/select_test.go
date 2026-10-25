@@ -55,7 +55,7 @@ func TestSqlSelectBuilder_SelectOnly(t *testing.T) {
 	t.Parallel()
 	// SELECT without FROM is valid (e.g. SELECT NOW()).
 	// Expressions containing '(' are left unquoted by isSimpleIdentifier.
-	got := newBuilder().Select("NOW()").ToSql()
+	got := newBuilder().Select(syntax.Fn("NOW")).ToSql()
 	want := `SELECT NOW();`
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
@@ -87,7 +87,7 @@ func TestSqlSelectBuilder_Alias(t *testing.T) {
 	got := sqltesting.Compact(
 		newBuilder().
 			From(syntax.As("users", "u")).
-			Select(syntax.As("COUNT(*)", "cnt")).
+			Select(syntax.As(syntax.Fn("COUNT", "*"), "cnt")).
 			ToSql(),
 	)
 	want := sqltesting.Compact(`
@@ -107,7 +107,7 @@ func TestSqlSelectBuilder_Where(t *testing.T) {
 		newBuilder().
 			From("users").
 			Select("id").
-			Where(syntax.Eq("status", "'active'")).
+			Where(syntax.Eq("status", syntax.Raw("'active'"))).
 			ToSql(),
 	)
 	want := sqltesting.Compact(`
@@ -156,8 +156,8 @@ func TestSqlSelectBuilder_WhereAndOr(t *testing.T) {
 			From("users").
 			Select("id").
 			Where(syntax.And(
-				syntax.Eq("status", "'active'"),
-				syntax.Or(syntax.Eq("role", "'admin'"), syntax.Eq("role", "'mod'")),
+				syntax.Eq("status", syntax.Raw("'active'")),
+				syntax.Or(syntax.Eq("role", syntax.Raw("'admin'")), syntax.Eq("role", syntax.Raw("'mod'"))),
 			)).
 			ToSql(),
 	)
@@ -381,19 +381,19 @@ func TestSqlSelectBuilder_With(t *testing.T) {
 	recent := newBuilder().
 		From("orders").
 		Select("user_id", "amount").
-		Where(syntax.Gte("created_at", "'2025-01-01'"))
+		Where(syntax.Gte("created_at", syntax.Raw("'2025-01-01'")))
 	got := sqltesting.Compact(
 		newBuilder().
 			With("recent_orders", recent).
 			From("recent_orders").
-			Select("user_id", syntax.As("SUM(amount)", "total")).
+			Select("user_id", syntax.As(syntax.Fn("SUM", "amount"), "total")).
 			GroupBy("user_id").
 			ToSql(),
 	)
 	want := sqltesting.Compact(`
 		WITH recent_orders AS (SELECT "user_id", "amount" FROM "orders" WHERE "created_at" >= '2025-01-01')
 		SELECT
-		    "user_id", SUM(amount) AS "total"
+		    "user_id", SUM("amount") AS "total"
 		FROM
 		    "recent_orders"
 		GROUP BY
@@ -552,13 +552,13 @@ func TestSqlSelectBuilder_WhereNewExpressions(t *testing.T) {
 		want string
 	}{
 		{"Not", syntax.Not(syntax.Eq("active", false)), `NOT ("active" = FALSE)`},
-		{"In", syntax.In("status", "'active'", "'pending'"), `"status" IN ('active', 'pending')`},
-		{"NotIn", syntax.NotIn("role", "'guest'"), `"role" NOT IN ('guest')`},
+		{"In", syntax.In("status", syntax.Raw("'active'"), syntax.Raw("'pending'")), `"status" IN ('active', 'pending')`},
+		{"NotIn", syntax.NotIn("role", syntax.Raw("'guest'")), `"role" NOT IN ('guest')`},
 		{"IsNull", syntax.IsNull("deleted_at"), `"deleted_at" IS NULL`},
 		{"IsNotNull", syntax.IsNotNull("email"), `"email" IS NOT NULL`},
 		{"Between", syntax.Between("age", 18, 65), `"age" BETWEEN 18 AND 65`},
-		{"Like", syntax.Like("name", "'%foo%'"), `"name" LIKE '%foo%'`},
-		{"ILike", syntax.ILike("name", "'%foo%'"), `"name" ILIKE '%foo%'`},
+		{"Like", syntax.Like("name", syntax.Raw("'%foo%'")), `"name" LIKE '%foo%'`},
+		{"ILike", syntax.ILike("name", syntax.Raw("'%foo%'")), `"name" ILIKE '%foo%'`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -576,7 +576,7 @@ func TestSqlSelectBuilder_SubqueryInFrom(t *testing.T) {
 	t.Parallel()
 	sub := newBuilder().
 		From("orders").
-		Select("user_id", syntax.As("SUM(amount)", "total")).
+		Select("user_id", syntax.As(syntax.Fn("SUM", "amount"), "total")).
 		GroupBy("user_id")
 	got := sqltesting.Compact(
 		newBuilder().
@@ -589,7 +589,7 @@ func TestSqlSelectBuilder_SubqueryInFrom(t *testing.T) {
 		SELECT
 		    "sub.user_id", "sub.total"
 		FROM
-		    (SELECT "user_id", SUM(amount) AS "total" FROM "orders" GROUP BY "user_id") AS "sub"
+		    (SELECT "user_id", SUM("amount") AS "total" FROM "orders" GROUP BY "user_id") AS "sub"
 		WHERE
 		    "sub.total" > 1000;
 	`)
@@ -602,7 +602,7 @@ func TestSqlSelectBuilder_SubqueryInJoin(t *testing.T) {
 	t.Parallel()
 	sub := newBuilder().
 		From("orders").
-		Select("user_id", syntax.As("SUM(amount)", "total")).
+		Select("user_id", syntax.As(syntax.Fn("SUM", "amount"), "total")).
 		GroupBy("user_id")
 	got := sqltesting.Compact(
 		newBuilder().
@@ -617,7 +617,7 @@ func TestSqlSelectBuilder_SubqueryInJoin(t *testing.T) {
 		FROM
 		    "users" AS "u"
 		INNER JOIN
-		    (SELECT "user_id", SUM(amount) AS "total" FROM "orders" GROUP BY "user_id") AS "totals"
+		    (SELECT "user_id", SUM("amount") AS "total" FROM "orders" GROUP BY "user_id") AS "totals"
 		    ON "u.id" = "totals.user_id";
 	`)
 	if got != want {

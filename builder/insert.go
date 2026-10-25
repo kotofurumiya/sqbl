@@ -2,7 +2,6 @@ package builder
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
@@ -92,7 +91,7 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 				if j > 0 {
 					buf.WriteString(", ")
 				}
-				appendValue(buf, d, v)
+				syntax.AppendValue(buf, d, v)
 			}
 			buf.WriteByte(')')
 		}
@@ -189,6 +188,7 @@ func (b SqlInsertBuilder) Columns(cols ...string) SqlInsertBuilder {
 
 // Values adds a row of values to the INSERT statement.
 // Call Values multiple times to insert multiple rows.
+// Each value accepts the same values as syntax.AppendValue.
 //
 //	b.Values(sqbl.P(1), sqbl.P(2))
 //	b.Values(sqbl.P(1), sqbl.P(2)).Values(sqbl.P(3), sqbl.P(4))
@@ -311,19 +311,4 @@ func (b SqlInsertBuilder) OrRollback() SqlInsertBuilder {
 func (b SqlInsertBuilder) Returning(cols ...string) SqlInsertBuilder {
 	b.returning = cols
 	return b
-}
-
-// appendValue writes a single value as SQL into buf using the given dialect.
-// Handles Parameter, bool, string, and other types.
-func appendValue(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
-	switch val := v.(type) {
-	case syntax.Parameter:
-		val.AppendSQL(buf, d)
-	case bool:
-		d.Bool(buf, val)
-	case string:
-		buf.WriteString(val)
-	default:
-		fmt.Fprintf(buf, "%v", val)
-	}
 }

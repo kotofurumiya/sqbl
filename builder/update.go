@@ -68,7 +68,7 @@ func (b SqlUpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			}
 			d.QuoteIdentifier(buf, s.Col)
 			buf.WriteString(" = ")
-			appendValue(buf, d, s.Val)
+			syntax.AppendValue(buf, d, s.Val)
 		}
 	}
 
@@ -106,8 +106,12 @@ func (b SqlUpdateBuilder) Table(table string) SqlUpdateBuilder {
 
 // Set adds a SET assignment to the UPDATE statement.
 // Call Set multiple times to assign multiple columns.
+// The value accepts the same values as syntax.AppendValue, so a plain string
+// is an identifier; use syntax.Raw for an expression.
 //
 //	b.Set("name", sqbl.P(1)).Set("email", sqbl.P(2))
+//	b.Set("count", sqbl.Raw(`"count" + 1`))
+//	b.Set("deleted_at", nil) // "deleted_at" = NULL
 func (b SqlUpdateBuilder) Set(col string, val any) SqlUpdateBuilder {
 	b.sets = append(append([]setClause(nil), b.sets...), setClause{Col: col, Val: val})
 	return b

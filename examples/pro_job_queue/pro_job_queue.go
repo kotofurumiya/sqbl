@@ -25,7 +25,7 @@ func main() {
 	// FOR UPDATE SKIP LOCKED;
 	claimJob := sqbl.From("jobs").
 		Select("id", "type", "payload").
-		Where(sqbl.Eq("status", "'pending'")).
+		Where(sqbl.Eq("status", sqbl.Raw("'pending'"))).
 		OrderBy(sqbl.Asc("id")).
 		Limit(1).
 		ForUpdate().SkipLocked().
@@ -36,8 +36,8 @@ func main() {
 	// UPDATE "jobs" SET "status" = 'processing', "started_at" = NOW()
 	// WHERE "id" = $1;
 	startJob := sqbl.Update("jobs").
-		Set("status", "'processing'").
-		Set("started_at", "NOW()").
+		Set("status", sqbl.Raw("'processing'")).
+		Set("started_at", sqbl.Fn("NOW")).
 		Where(sqbl.Eq("id", sqbl.P(1))).
 		ToSql()
 	fmt.Println(startJob)
@@ -47,8 +47,8 @@ func main() {
 	// WHERE "id" = $1
 	// RETURNING "id", "type";
 	completeJob := sqbl.Update("jobs").
-		Set("status", "'done'").
-		Set("finished_at", "NOW()").
+		Set("status", sqbl.Raw("'done'")).
+		Set("finished_at", sqbl.Fn("NOW")).
 		Where(sqbl.Eq("id", sqbl.P(1))).
 		Returning("id", "type").
 		ToSql()
@@ -59,9 +59,9 @@ func main() {
 	// WHERE "id" = $2
 	// RETURNING "id", "type";
 	failJob := sqbl.Update("jobs").
-		Set("status", "'failed'").
+		Set("status", sqbl.Raw("'failed'")).
 		Set("error", sqbl.P(1)).
-		Set("finished_at", "NOW()").
+		Set("finished_at", sqbl.Fn("NOW")).
 		Where(sqbl.Eq("id", sqbl.P(2))).
 		Returning("id", "type").
 		ToSql()

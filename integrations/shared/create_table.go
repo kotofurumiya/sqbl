@@ -127,7 +127,7 @@ func RunCreateTable_ForeignKey(t testing.TB, conn Conn, s Suite) {
 		s.DeleteFrom("it_fk_users").Where(syntax.Eq("id", syntax.P(1))).ToSql(), 1)
 
 	var count int
-	if err := conn.QueryRow(ctx, s.From("it_fk_orders").Select("COUNT(*)").ToSql()).Scan(&count); err != nil {
+	if err := conn.QueryRow(ctx, s.From("it_fk_orders").Select(syntax.Fn("COUNT", "*")).ToSql()).Scan(&count); err != nil {
 		t.Fatalf("count orders: %v", err)
 	}
 	if count != 0 {

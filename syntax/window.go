@@ -74,7 +74,7 @@ func (w WindowExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			if i > 0 {
 				buf.WriteString(", ")
 			}
-			ToFragment(col).AppendSQL(buf, d)
+			AppendValue(buf, d, col)
 		}
 		needSpace = true
 	}
@@ -87,7 +87,7 @@ func (w WindowExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			if i > 0 {
 				buf.WriteString(", ")
 			}
-			ToFragment(col).AppendSQL(buf, d)
+			AppendValue(buf, d, col)
 		}
 		needSpace = true
 	}

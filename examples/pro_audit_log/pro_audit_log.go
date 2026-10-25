@@ -22,7 +22,7 @@ func main() {
 	// RETURNING "id", "email";
 	upsertUser := sqbl.InsertInto("users").
 		Columns("email", "name", "updated_at").
-		Values(sqbl.P(1), sqbl.P(2), "NOW()").
+		Values(sqbl.P(1), sqbl.P(2), sqbl.Fn("NOW")).
 		OnConflict("email").DoUpdate(
 		`"name" = EXCLUDED."name"`,
 		`"updated_at" = NOW()`,
@@ -39,7 +39,7 @@ func main() {
 	// RETURNING "id";
 	writeAuditLog := sqbl.InsertInto("audit_logs").
 		Columns("user_id", "action", "payload", "created_at").
-		Values(sqbl.P(1), sqbl.P(2), sqbl.P(3), "NOW()").
+		Values(sqbl.P(1), sqbl.P(2), sqbl.P(3), sqbl.Fn("NOW")).
 		Returning("id").
 		ToSql()
 	fmt.Println(writeAuditLog)

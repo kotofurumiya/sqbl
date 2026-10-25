@@ -63,13 +63,31 @@ func TestSqlUpdateBuilder_BoolValue(t *testing.T) {
 	}
 }
 
+func TestSqlUpdateBuilder_ValueKinds(t *testing.T) {
+	t.Parallel()
+	got := (builder.SqlUpdateBuilder{}).
+		Dialect(&dialect.PostgresDialect{}).
+		Table("users").
+		Set("updated_at", syntax.Fn("NOW")).
+		Set("deleted_at", nil).
+		Set("login_count", syntax.Raw(`"login_count" + 1`)).
+		Set("name", "users.display_name").
+		ToSql()
+	// A plain string is an identifier, so the last assignment copies a column.
+	want := `UPDATE "users" SET "updated_at" = NOW(), "deleted_at" = NULL, ` +
+		`"login_count" = "login_count" + 1, "name" = "users"."display_name";`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
 func TestSqlUpdateBuilder_WhereAnd(t *testing.T) {
 	t.Parallel()
 	got := newUpdateBuilder().
 		Table("users").
 		Set("status", syntax.P(1)).
 		Where(syntax.And(
-			syntax.Eq("role", "'member'"),
+			syntax.Eq("role", syntax.Raw("'member'")),
 			syntax.IsNull("deleted_at"),
 		)).
 		ToSql()

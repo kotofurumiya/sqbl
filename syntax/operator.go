@@ -2,8 +2,6 @@ package syntax
 
 import (
 	"bytes"
-	"fmt"
-	"strings"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 )
@@ -12,90 +10,66 @@ var _ SqlFragment = ComparisonExpr{}
 var _ SqlFragment = LogicalExpr{}
 
 // ComparisonExpr represents a binary comparison such as col = value.
+// Left and Right accept the same values as AppendValue; a plain string is an identifier.
 type ComparisonExpr struct {
-	Left     any // string identifier, SqlFragment (e.g. Fn), or raw expression
+	Left     any
 	Operator string
 	Right    any
 }
 
 // AppendSQL implements SqlFragment, writing the comparison into buf.
 func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	switch v := e.Left.(type) {
-	case string:
-		if isSimpleIdentifier(v) {
-			d.QuoteIdentifier(buf, v)
-		} else {
-			buf.WriteString(v)
-		}
-	case SqlFragment:
-		v.AppendSQL(buf, d)
-	default:
-		fmt.Fprint(buf, v)
-	}
-
+	AppendValue(buf, d, e.Left)
 	buf.WriteByte(' ')
 	buf.WriteString(e.Operator)
 	buf.WriteByte(' ')
-
-	switch v := e.Right.(type) {
-	case SqlFragment:
-		v.AppendSQL(buf, d)
-	case bool:
-		d.Bool(buf, v)
-	case string:
-		// isSimpleIdentifier already excludes strings containing '(' or '\''.
-		// The extra '"' check lets callers pass pre-quoted identifiers (e.g. "table"."col")
-		// through as-is rather than double-quoting them.
-		if isSimpleIdentifier(v) && !strings.ContainsAny(v, "\"") {
-			d.QuoteIdentifier(buf, v)
-		} else {
-			buf.WriteString(v)
-		}
-	default:
-		fmt.Fprintf(buf, "%v", v)
-	}
+	AppendValue(buf, d, e.Right)
 }
 
 // Eq returns an equality (=) comparison expression.
+// A plain string on either side is an identifier, so compare against a value
+// with P, or with Raw for a literal written into the SQL.
 //
-//	syntax.Eq("status", "active")         // status = active
-//	syntax.Eq(syntax.Fn("SUM", "x"), 100) // SUM(x) = 100
+//	syntax.Eq("status", syntax.P(1))        // "status" = $1
+//	syntax.Eq("u.id", "o.user_id")          // "u"."id" = "o"."user_id"
+//	syntax.Eq("status", syntax.Raw("'ok'")) // "status" = 'ok'
+//	syntax.Eq(syntax.Fn("SUM", "x"), 100)   // SUM("x") = 100
 func Eq(left any, right any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: "=", Right: right}
 }
 
 // Ne returns an inequality (<>) comparison expression.
 //
-//	syntax.Ne("status", "deleted")  // status <> deleted
+//	syntax.Ne("status", syntax.P(1))  // "status" <> $1
 func Ne(left any, right any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: "<>", Right: right}
 }
 
 // Lt returns a less-than (<) comparison expression.
 //
-//	syntax.Lt("age", 18)  // age < 18
+//	syntax.Lt("age", 18)  // "age" < 18
 func Lt(left any, right any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: "<", Right: right}
 }
 
 // Lte returns a less-than-or-equal (<=) comparison expression.
 //
-//	syntax.Lte("age", 18)  // age <= 18
+//	syntax.Lte("age", 18)  // "age" <= 18
 func Lte(left any, right any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: "<=", Right: right}
 }
 
 // Gt returns a greater-than (>) comparison expression.
 //
-//	syntax.Gt("score", 100)              // score > 100
-//	syntax.Gt(syntax.Fn("SUM", "x"), 0) // SUM(x) > 0
+//	syntax.Gt("score", 100)              // "score" > 100
+//	syntax.Gt(syntax.Fn("SUM", "x"), 0) // SUM("x") > 0
 func Gt(left any, right any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: ">", Right: right}
 }
 
 // Gte returns a greater-than-or-equal (>=) comparison expression.
 //
-//	syntax.Gte("score", 100)  // score >= 100
+//	syntax.Gte("score", 100)  // "score" >= 100
 func Gte(left any, right any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: ">=", Right: right}
 }
@@ -128,15 +102,15 @@ func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 // And combines multiple expressions with AND.
 //
 //	syntax.And(syntax.Eq("active", true), syntax.Gt("age", 18))
-//	// active = TRUE AND age > 18
+//	// "active" = TRUE AND "age" > 18
 func And(exprs ...SqlFragment) LogicalExpr {
 	return LogicalExpr{Operator: "AND", Expressions: exprs}
 }
 
 // Or combines multiple expressions with OR.
 //
-//	syntax.Or(syntax.Eq("role", "admin"), syntax.Eq("role", "moderator"))
-//	// role = admin OR role = moderator
+//	syntax.Or(syntax.Eq("role", syntax.P(1)), syntax.Eq("role", syntax.P(2)))
+//	// "role" = $1 OR "role" = $2
 func Or(exprs ...SqlFragment) LogicalExpr {
 	return LogicalExpr{Operator: "OR", Expressions: exprs}
 }
@@ -164,8 +138,9 @@ func Not(expr SqlFragment) NotExpr {
 }
 
 // InExpr represents an IN or NOT IN expression.
+// Left and each value accept the same values as AppendValue.
 type InExpr struct {
-	Left   any // string identifier, SqlFragment (e.g. Fn), or raw expression
+	Left   any
 	Negate bool
 	Values []any
 }
@@ -174,7 +149,7 @@ var _ SqlFragment = InExpr{}
 
 // AppendSQL implements SqlFragment, writing the IN or NOT IN expression into buf.
 func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	ToFragment(e.Left).AppendSQL(buf, d)
+	AppendValue(buf, d, e.Left)
 	if e.Negate {
 		buf.WriteString(" NOT IN (")
 	} else {
@@ -184,43 +159,33 @@ func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 		if i > 0 {
 			buf.WriteString(", ")
 		}
-		switch val := v.(type) {
-		case SqlFragment:
-			val.AppendSQL(buf, d)
-		case bool:
-			d.Bool(buf, val)
-		case string:
-			// String values are SQL literals supplied by the caller (e.g. "'active'").
-			buf.WriteString(val)
-		default:
-			fmt.Fprintf(buf, "%v", val)
-		}
+		AppendValue(buf, d, v)
 	}
 	buf.WriteByte(')')
 }
 
 // In returns an IN expression.
 //
-//	syntax.In("status", "'active'", "'pending'")
-//	// status IN ('active', 'pending')
+//	syntax.In("status", syntax.P(1), syntax.P(2))
+//	// "status" IN ($1, $2)
 //
-//	syntax.In(syntax.Fn("LOWER", "email"), P(1))
-//	// LOWER(email) IN ($1)
+//	syntax.In("id", subquery)
+//	// "id" IN (SELECT ...)
 func In(left any, values ...any) InExpr {
 	return InExpr{Left: left, Negate: false, Values: values}
 }
 
 // NotIn returns a NOT IN expression.
 //
-//	syntax.NotIn("status", "'deleted'", "'banned'")
-//	// status NOT IN ('deleted', 'banned')
+//	syntax.NotIn("status", syntax.Raw("'deleted'"), syntax.Raw("'banned'"))
+//	// "status" NOT IN ('deleted', 'banned')
 func NotIn(left any, values ...any) InExpr {
 	return InExpr{Left: left, Negate: true, Values: values}
 }
 
 // NullExpr represents an IS NULL or IS NOT NULL expression.
 type NullExpr struct {
-	Col    any // string identifier, SqlFragment (e.g. Fn), or raw expression
+	Col    any // accepts the same values as AppendValue
 	Negate bool
 }
 
@@ -228,7 +193,7 @@ var _ SqlFragment = NullExpr{}
 
 // AppendSQL implements SqlFragment, writing IS NULL or IS NOT NULL into buf.
 func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	ToFragment(e.Col).AppendSQL(buf, d)
+	AppendValue(buf, d, e.Col)
 	if e.Negate {
 		buf.WriteString(" IS NOT NULL")
 	} else {
@@ -239,7 +204,7 @@ func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 // IsNull returns an IS NULL expression.
 //
 //	syntax.IsNull("deleted_at")
-//	// deleted_at IS NULL
+//	// "deleted_at" IS NULL
 func IsNull(col any) NullExpr {
 	return NullExpr{Col: col, Negate: false}
 }
@@ -247,14 +212,15 @@ func IsNull(col any) NullExpr {
 // IsNotNull returns an IS NOT NULL expression.
 //
 //	syntax.IsNotNull("email")
-//	// email IS NOT NULL
+//	// "email" IS NOT NULL
 func IsNotNull(col any) NullExpr {
 	return NullExpr{Col: col, Negate: true}
 }
 
 // BetweenExpr represents a BETWEEN ... AND ... expression.
+// Col and both bounds accept the same values as AppendValue.
 type BetweenExpr struct {
-	Col  any // string identifier, SqlFragment (e.g. Fn), or raw expression
+	Col  any
 	Low  any
 	High any
 }
@@ -263,56 +229,39 @@ var _ SqlFragment = BetweenExpr{}
 
 // AppendSQL implements SqlFragment, writing the BETWEEN expression into buf.
 func (e BetweenExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	ToFragment(e.Col).AppendSQL(buf, d)
+	AppendValue(buf, d, e.Col)
 	buf.WriteString(" BETWEEN ")
-	appendBound(buf, d, e.Low)
+	AppendValue(buf, d, e.Low)
 	buf.WriteString(" AND ")
-	appendBound(buf, d, e.High)
-}
-
-// appendBound writes a single BETWEEN bound value into buf.
-// Bound values are SQL literals supplied by the caller (e.g. 18, "'2025-01-01'").
-func appendBound(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
-	switch val := v.(type) {
-	case SqlFragment:
-		val.AppendSQL(buf, d)
-	case bool:
-		d.Bool(buf, val)
-	case string:
-		buf.WriteString(val)
-	default:
-		fmt.Fprintf(buf, "%v", val)
-	}
+	AppendValue(buf, d, e.High)
 }
 
 // Between returns a BETWEEN ... AND ... expression.
 //
 //	syntax.Between("age", 18, 65)
-//	// age BETWEEN 18 AND 65
+//	// "age" BETWEEN 18 AND 65
 func Between(col any, low, high any) BetweenExpr {
 	return BetweenExpr{Col: col, Low: low, High: high}
 }
 
 // Like returns a LIKE comparison expression.
-// The pattern should be a SQL string literal including quotes (e.g. "'%foo%'").
+// The pattern accepts the same values as AppendValue; pass it with P, or with Raw
+// for a literal written into the SQL.
 //
-//	syntax.Like("name", "'%foo%'")
-//	// name LIKE '%foo%'
+//	syntax.Like("name", syntax.P(1))
+//	// "name" LIKE $1
 //
-//	syntax.Like(syntax.Fn("LOWER", "name"), "'%foo%'")
-//	// LOWER(name) LIKE '%foo%'
-func Like(left any, pattern string) ComparisonExpr {
+//	syntax.Like(syntax.Fn("LOWER", "name"), syntax.Raw("'%foo%'"))
+//	// LOWER("name") LIKE '%foo%'
+func Like(left any, pattern any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: "LIKE", Right: pattern}
 }
 
 // ILike returns an ILIKE comparison expression (case-insensitive LIKE, PostgreSQL-specific).
-// The pattern should be a SQL string literal including quotes (e.g. "'%foo%'").
+// The pattern accepts the same values as Like.
 //
-//	syntax.ILike("name", "'%foo%'")
-//	// name ILIKE '%foo%'
-//
-//	syntax.ILike(syntax.Fn("LOWER", "name"), "'%foo%'")
-//	// LOWER(name) ILIKE '%foo%'
-func ILike(left any, pattern string) ComparisonExpr {
+//	syntax.ILike("name", syntax.P(1))
+//	// "name" ILIKE $1
+func ILike(left any, pattern any) ComparisonExpr {
 	return ComparisonExpr{Left: left, Operator: "ILIKE", Right: pattern}
 }

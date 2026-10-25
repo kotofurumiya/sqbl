@@ -36,8 +36,8 @@ func TestSqblMysql_BuildSQL(t *testing.T) {
 				).
 				InnerJoin(As("purchases", "p"), Eq("u.id", "p.user_id")).
 				Where(And(
-					Gte("p.purchased_at", "'2025-01-01'"),
-					Or(Eq("u.status", "'active'"), Eq("u.role", "'admin'")),
+					Gte("p.purchased_at", Raw("'2025-01-01'")),
+					Or(Eq("u.status", Raw("'active'")), Eq("u.role", Raw("'admin'"))),
 				)).
 				GroupBy("u.id", "u.name").
 				Having(And(
@@ -108,7 +108,7 @@ func TestSqblMysql_BuildSQL(t *testing.T) {
 
 		sub := From("orders").
 			Select("user_id", "amount").
-			Where(Gte("created_at", "'2025-01-01'"))
+			Where(Gte("created_at", Raw("'2025-01-01'")))
 
 		got := sqltesting.Compact(
 			From("recent_orders").

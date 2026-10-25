@@ -2,10 +2,23 @@ package sqblpg
 
 import "github.com/kotofurumiya/sqbl/syntax"
 
+// Ident is an identifier such as a column or table name. It is quoted, and
+// each dot-separated part is quoted separately. A plain string passed where an
+// expression is expected is treated the same way.
+//
+//	sqblpg.Ident("users.id")
+type Ident = syntax.Ident
+
+// Raw is a SQL fragment written as-is. Never build it from untrusted input.
+//
+//	sqblpg.Raw("n + 1")
+//	sqblpg.Raw("'pending'")
+type Raw = syntax.Raw
+
 // As creates an aliased expression for use in Select(), From(), or Join().
 //
 //	sqblpg.As("users", "u")                   // users AS u
-//	sqblpg.As("SUM(p.amount)", "total_spent") // SUM(p.amount) AS total_spent
+//	sqblpg.As(sqblpg.Fn("SUM", "amount"), "total") // SUM(amount) AS total
 //	sqblpg.As(subquery, "sub")                // (SELECT ...) AS sub
 func As(source any, alias string) syntax.Aliased {
 	return syntax.As(source, alias)
@@ -13,14 +26,15 @@ func As(source any, alias string) syntax.Aliased {
 
 // Eq returns a = comparison expression.
 //
-//	sqblpg.Eq("status", "active") // status = active
+//	sqblpg.Eq("status", sqblpg.P(1)) // status = <param>
+//	sqblpg.Eq("u.id", "o.user_id")   // u.id = o.user_id (a plain string is an identifier)
 func Eq(left any, right any) syntax.ComparisonExpr {
 	return syntax.Eq(left, right)
 }
 
 // Ne returns a <> comparison expression.
 //
-//	sqblpg.Ne("status", "deleted") // status <> deleted
+//	sqblpg.Ne("status", sqblpg.P(1)) // status <> <param>
 func Ne(left any, right any) syntax.ComparisonExpr {
 	return syntax.Ne(left, right)
 }
@@ -63,8 +77,8 @@ func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
 
 // Or combines multiple expressions with OR.
 //
-//	sqblpg.Or(sqblpg.Eq("role", "admin"), sqblpg.Eq("role", "moderator"))
-//	// role = admin OR role = moderator
+//	sqblpg.Or(sqblpg.Eq("role", sqblpg.P(1)), sqblpg.Eq("role", sqblpg.P(2)))
+//	// role = <param> OR role = <param>
 func Or(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
 	return syntax.Or(exprs...)
 }
@@ -93,15 +107,15 @@ func Not(expr syntax.SqlFragment) syntax.NotExpr {
 
 // In returns an IN expression.
 //
-//	sqblpg.In("status", "'active'", "'pending'")
-//	// status IN ('active', 'pending')
+//	sqblpg.In("status", sqblpg.P(1), sqblpg.P(2))
+//	// status IN (<param>, <param>)
 func In(left any, values ...any) syntax.InExpr {
 	return syntax.In(left, values...)
 }
 
 // NotIn returns a NOT IN expression.
 //
-//	sqblpg.NotIn("status", "'deleted'", "'banned'")
+//	sqblpg.NotIn("status", sqblpg.Raw("'deleted'"), sqblpg.Raw("'banned'"))
 //	// status NOT IN ('deleted', 'banned')
 func NotIn(left any, values ...any) syntax.InExpr {
 	return syntax.NotIn(left, values...)
@@ -132,20 +146,20 @@ func Between(col any, low, high any) syntax.BetweenExpr {
 }
 
 // Like returns a LIKE comparison expression.
-// The pattern should be a SQL string literal including quotes (e.g. "'%foo%'").
+// The pattern accepts the same values as Eq; pass it with P, or with Raw for a literal.
 //
-//	sqblpg.Like("name", "'%foo%'")
+//	sqblpg.Like("name", sqblpg.Raw("'%foo%'"))
 //	// name LIKE '%foo%'
-func Like(left any, pattern string) syntax.ComparisonExpr {
+func Like(left any, pattern any) syntax.ComparisonExpr {
 	return syntax.Like(left, pattern)
 }
 
 // ILike returns an ILIKE comparison expression (case-insensitive LIKE, PostgreSQL-specific).
-// The pattern should be a SQL string literal including quotes (e.g. "'%foo%'").
+// The pattern accepts the same values as Eq; pass it with P, or with Raw for a literal.
 //
-//	sqblpg.ILike("name", "'%foo%'")
+//	sqblpg.ILike("name", sqblpg.Raw("'%foo%'"))
 //	// name ILIKE '%foo%'
-func ILike(left any, pattern string) syntax.ComparisonExpr {
+func ILike(left any, pattern any) syntax.ComparisonExpr {
 	return syntax.ILike(left, pattern)
 }
 

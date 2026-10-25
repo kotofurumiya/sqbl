@@ -40,7 +40,7 @@ func TestSqlDeleteBuilder_WhereAnd(t *testing.T) {
 	got := newDeleteBuilder().
 		From("logs").
 		Where(syntax.And(
-			syntax.Eq("level", "'debug'"),
+			syntax.Eq("level", syntax.Raw("'debug'")),
 			syntax.Lt("created_at", syntax.P(1)),
 		)).
 		ToSql()
