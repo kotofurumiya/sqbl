@@ -38,8 +38,8 @@ type SqlSelectBuilder struct {
 	ctes       []cteClause          // WITH ...
 	distinct   bool                 // DISTINCT
 	distinctOn []string             // DISTINCT ON (col1, col2) — PostgreSQL only
-	columns    []syntax.SqlFragment // SELECT ... (StringExpr | Aliased)
-	from       syntax.SqlFragment   // FROM (StringExpr | SqlSelectBuilder | Aliased)
+	columns    []syntax.SqlFragment // SELECT ... (Ident | Aliased | any SqlFragment)
+	from       syntax.SqlFragment   // FROM (Ident | SqlSelectBuilder | Aliased | any SqlFragment)
 	joins      []syntax.JoinClause  // JOIN ...
 	where      syntax.SqlFragment   // WHERE ...
 	groups     []syntax.SqlFragment // GROUP BY ...
@@ -269,11 +269,11 @@ func (b SqlSelectBuilder) From(table any) SqlSelectBuilder {
 }
 
 // Select sets the columns to retrieve.
-// Accepts column name strings, aliased expressions, or raw SQL fragments.
+// Each column accepts the same values as syntax.AppendValue; a plain string is an identifier.
 // Calling Select again replaces the previous column list.
 //
 //	b.Select("id", "name")
-//	b.Select(sqbl.As("SUM(amount)", "total"))
+//	b.Select(sqbl.As(sqbl.Fn("SUM", "amount"), "total"))
 func (b SqlSelectBuilder) Select(columns ...any) SqlSelectBuilder {
 	cols := make([]syntax.SqlFragment, len(columns))
 	for i, col := range columns {
@@ -285,8 +285,8 @@ func (b SqlSelectBuilder) Select(columns ...any) SqlSelectBuilder {
 
 // Join adds an INNER JOIN clause. It is an alias for InnerJoin.
 //
-//	b.Join(sqbl.As("orders", "o"), "u.id = o.user_id")
-//	// INNER JOIN orders AS o ON u.id = o.user_id
+//	b.Join(sqbl.As("orders", "o"), sqbl.Eq("u.id", "o.user_id"))
+//	// INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
 func (b SqlSelectBuilder) Join(table any, on syntax.SqlFragment) SqlSelectBuilder {
 	return b.InnerJoin(table, on)
 }
@@ -295,8 +295,8 @@ func (b SqlSelectBuilder) Join(table any, on syntax.SqlFragment) SqlSelectBuilde
 // Use dialect-specific helpers (e.g. sqblpg.Eq, sqblpg.Gt) to build conditions.
 // Combine multiple conditions explicitly with And or Or.
 //
-//	b.Where(sqblpg.Eq("status", "active"))
-//	b.Where(sqblpg.And(sqblpg.Eq("status", "active"), sqblpg.Gt("age", 18)))
+//	b.Where(sqblpg.Eq("status", sqblpg.P(1)))
+//	b.Where(sqblpg.And(sqblpg.Eq("status", sqblpg.P(1)), sqblpg.Gt("age", 18)))
 func (b SqlSelectBuilder) Where(expr syntax.SqlFragment) SqlSelectBuilder {
 	b.where = expr
 	return b
@@ -323,10 +323,10 @@ func (b SqlSelectBuilder) DistinctOn(cols ...string) SqlSelectBuilder {
 }
 
 // GroupBy sets the GROUP BY columns or expressions.
-// Accepts column name strings, aliased expressions, or raw SQL fragments.
+// Each item accepts the same values as syntax.AppendValue; a plain string is an identifier.
 //
 //	b.GroupBy("department", "role")
-//	b.GroupBy(sqbl.As("EXTRACT(year FROM created_at)", "year"))
+//	b.GroupBy(sqbl.Raw(`EXTRACT(year FROM "created_at")`))
 func (b SqlSelectBuilder) GroupBy(cols ...any) SqlSelectBuilder {
 	groups := make([]syntax.SqlFragment, len(cols))
 	for i, col := range cols {
@@ -340,8 +340,8 @@ func (b SqlSelectBuilder) GroupBy(cols ...any) SqlSelectBuilder {
 // Use dialect-specific helpers to build conditions.
 // Combine multiple conditions explicitly with And or Or.
 //
-//	b.Having(sqblpg.Gt("SUM(amount)", 1000))
-//	// HAVING SUM(amount) > 1000
+//	b.Having(sqblpg.Gt(sqblpg.Fn("SUM", "amount"), 1000))
+//	// HAVING SUM("amount") > 1000
 func (b SqlSelectBuilder) Having(expr syntax.SqlFragment) SqlSelectBuilder {
 	b.having = expr
 	return b

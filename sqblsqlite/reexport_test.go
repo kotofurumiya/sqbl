@@ -195,8 +195,8 @@ func TestReexports(t *testing.T) {
 	t.Run("Like", func(t *testing.T) {
 		t.Parallel()
 		var got, want bytes.Buffer
-		Like("name", "'%foo%'").AppendSQL(&got, d)
-		syntax.Like("name", "'%foo%'").AppendSQL(&want, d)
+		Like("name", syntax.Raw("'%foo%'")).AppendSQL(&got, d)
+		syntax.Like("name", syntax.Raw("'%foo%'")).AppendSQL(&want, d)
 		if got.String() != want.String() {
 			t.Errorf("Like: got %q, want %q", got.String(), want.String())
 		}

@@ -65,7 +65,7 @@ func main() {
   sql4 := sqbl.From(sqbl.As("users", "u")).
     Select("u.id", "u.name", sqbl.As(sqbl.Fn("SUM", "p.amount"), "total_spent")).
     InnerJoin(sqbl.As("purchases", "p"), sqbl.Eq("u.id", "p.user_id")).
-    Where(sqbl.Gte("p.purchased_at", "'2025-01-01'")).
+    Where(sqbl.Gte("p.purchased_at", sqbl.Raw("'2025-01-01'"))).
     GroupBy("u.id", "u.name").
     Having(sqbl.Gt(sqbl.Fn("SUM", "p.amount"), 5000)).
     OrderBy(sqbl.Desc("total_spent")).
@@ -73,13 +73,13 @@ func main() {
     ToSql()
 
   // Subquery in FROM
-  sub := sqbl.From("orders").Select("user_id").Where(sqbl.Eq("status", "'paid'"))
+  sub := sqbl.From("orders").Select("user_id").Where(sqbl.Eq("status", sqbl.Raw("'paid'")))
   sql5 := sqbl.From(sqbl.As(sub, "sub")).Select("sub.user_id").ToSql()
 
   // SELECT "id", "payload" FROM "jobs" WHERE "status" = 'pending' ORDER BY "id" ASC LIMIT 1 FOR UPDATE SKIP LOCKED;
   sql6 := sqbl.From("jobs").
     Select("id", "payload").
-    Where(sqbl.Eq("status", "'pending'")).
+    Where(sqbl.Eq("status", sqbl.Raw("'pending'"))).
     OrderBy(sqbl.Asc("id")).
     Limit(1).
     ForUpdate().SkipLocked().
@@ -89,12 +89,41 @@ func main() {
   sql7 := sqbl.From("users").
     Select("id", "name").
     Where(sqbl.Or(
-      sqbl.Eq("role", "'admin'"),
-      sqbl.Eq("role", "'moderator'"),
+      sqbl.Eq("role", sqbl.Raw("'admin'")),
+      sqbl.Eq("role", sqbl.Raw("'moderator'")),
     )).
     ToSql()
 }
 ```
+
+## Identifiers, Values, and Raw SQL
+
+A plain string passed where an expression is expected is always an identifier.
+sqbl never guesses from the content of a string, so a value can never leak into the SQL by accident.
+
+| You pass | Rendered as | Example |
+|---|---|---|
+| `"users.id"` | quoted identifier | `"users"."id"` |
+| `sqbl.P(1)` | placeholder | `$1` |
+| `42`, `true`, `nil` | literal | `42`, `TRUE`, `NULL` |
+| `sqbl.Fn("NOW")` | function call | `NOW()` |
+| `sqbl.Raw("n + 1")` | written as-is | `n + 1` |
+
+```go
+// "status" = $1 — pass values as parameters
+sqbl.Eq("status", sqbl.P(1))
+
+// "u"."id" = "o"."user_id" — a plain string is a column
+sqbl.Eq("u.id", "o.user_id")
+
+// "status" = 'pending' — write SQL text explicitly with Raw
+sqbl.Eq("status", sqbl.Raw("'pending'"))
+```
+
+- `sqbl.Ident("...")` makes an identifier explicit. It behaves the same as a plain string.
+- Each dot-separated part of an identifier is quoted separately. `*` and a trailing `.*` stay unquoted.
+- Never build a `Raw` from untrusted input.
+- Arguments typed as `string` that take a piece of SQL syntax are written as-is. Examples are column types and constraints in `CREATE TABLE`, `DoUpdate` assignments, and window frames.
 
 ## Docs
 

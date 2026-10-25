@@ -43,14 +43,22 @@ Each fragment writes directly into the shared buffer instead of returning a stri
 
 Key types:
 
-- `StringExpr` — a plain string; auto-quoted via `QuoteIdentifier` if it is a simple identifier, passed through as-is otherwise
+- `Ident` — an identifier, quoted via `QuoteIdentifier`; a plain string is treated the same way
+- `Raw` — SQL text written as-is
 - `Aliased` — `<source> AS <alias>`
 - `SqlFn` — a function call such as `SUM("amount")` or `COUNT(*)`
 - `WindowExpr` — a window function expression (`expr OVER (PARTITION BY ... ORDER BY ...)`)
 - `Parameter` — a bind parameter placeholder (`?`, `$N`, `:name`, `@name`)
 - Condition types: `ComparisonExpr`, `LogicalExpr`, `NotExpr`, `InExpr`, `NullExpr`, `BetweenExpr`
 
-`ToFragment(v any)` converts arbitrary values to `SqlFragment`: `SqlFragment` values pass through, strings become `StringExpr`, anything else is formatted with `fmt.Sprint`.
+Every argument that accepts an expression (`any`) follows one rule, implemented by `AppendValue` and `ToFragment`:
+
+- `SqlFragment` values render themselves.
+- Strings are identifiers. The content of a string is never inspected to decide whether it is an expression.
+- `bool` uses the dialect's boolean literal, and `nil` is `NULL`.
+- Anything else, such as a number, is formatted with `fmt.Sprint`.
+
+`AppendValue` writes directly into the buffer. `ToFragment` returns a `SqlFragment` for builders that store expressions before rendering.
 
 ---
 

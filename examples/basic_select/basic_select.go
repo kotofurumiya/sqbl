@@ -43,8 +43,8 @@ func main() {
 	sql3 := sqbl.From("users").
 		Select("id", "name").
 		Where(sqbl.Or(
-			sqbl.Eq("role", "'admin'"),
-			sqbl.Eq("role", "'moderator'"),
+			sqbl.Eq("role", sqbl.Raw("'admin'")),
+			sqbl.Eq("role", sqbl.Raw("'moderator'")),
 		)).
 		ToSql()
 	fmt.Println(sql3)

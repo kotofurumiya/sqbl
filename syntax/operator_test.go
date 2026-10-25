@@ -37,6 +37,37 @@ func TestOperator_Comparisons(t *testing.T) {
 	}
 }
 
+func TestOperator_ComparisonOperands(t *testing.T) {
+	t.Parallel()
+	d := &dialect.PostgresDialect{}
+
+	tests := []struct {
+		name     string
+		expr     ComparisonExpr
+		expected string
+	}{
+		{name: "column to column", expr: Eq("u.id", "o.user_id"), expected: `"u"."id" = "o"."user_id"`},
+		// A plain string is never treated as a value, even if it looks like one.
+		{name: "string is not a value", expr: Eq("status", "pending"), expected: `"status" = "pending"`},
+		{name: "string is not an expression", expr: Eq("n", "n + 1"), expected: `"n" = "n + 1"`},
+		{name: "parameter", expr: Eq("status", P(1)), expected: `"status" = $1`},
+		{name: "raw literal", expr: Eq("status", Raw("'pending'")), expected: `"status" = 'pending'`},
+		{name: "int", expr: Eq("age", 18), expected: `"age" = 18`},
+		{name: "nil", expr: Eq("a", nil), expected: `"a" = NULL`},
+		{name: "Fn on left", expr: Eq(Fn("LOWER", "email"), P(1)), expected: `LOWER("email") = $1`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			tt.expr.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.expected {
+				t.Errorf("got %q; want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestOperator_LogicalExpr(t *testing.T) {
 	t.Parallel()
 	d := &dialect.SimpleDialect{}
@@ -101,11 +132,12 @@ func TestOperator_In(t *testing.T) {
 		expr     InExpr
 		expected string
 	}{
-		{name: "In strings", expr: In("status", "'active'", "'pending'"), expected: `"status" IN ('active', 'pending')`},
+		{name: "In strings", expr: In("status", Raw("'active'"), Raw("'pending'")), expected: `"status" IN ('active', 'pending')`},
 		{name: "In ints", expr: In("id", 1, 2, 3), expected: `"id" IN (1, 2, 3)`},
-		{name: "NotIn", expr: NotIn("status", "'deleted'", "'banned'"), expected: `"status" NOT IN ('deleted', 'banned')`},
+		{name: "NotIn", expr: NotIn("status", Raw("'deleted'"), Raw("'banned'")), expected: `"status" NOT IN ('deleted', 'banned')`},
 		{name: "In bool", expr: In("active", true, false), expected: `"active" IN (TRUE, FALSE)`},
-		{name: "In with Fn left", expr: In(Fn("LOWER", "email"), "'alice@example.com'"), expected: `LOWER("email") IN ('alice@example.com')`},
+		{name: "In plain strings are identifiers", expr: In("a", "b", "c"), expected: `"a" IN ("b", "c")`},
+		{name: "In with Fn left", expr: In(Fn("LOWER", "email"), P(1)), expected: `LOWER("email") IN (?1)`},
 	}
 
 	for _, tt := range tests {
@@ -156,8 +188,10 @@ func TestOperator_Between(t *testing.T) {
 		expected string
 	}{
 		{name: "int bounds", expr: Between("age", 18, 65), expected: `"age" BETWEEN 18 AND 65`},
-		{name: "string bounds", expr: Between("created_at", "'2025-01-01'", "'2025-12-31'"), expected: `"created_at" BETWEEN '2025-01-01' AND '2025-12-31'`},
+		{name: "string bounds", expr: Between("created_at", Raw("'2025-01-01'"), Raw("'2025-12-31'")), expected: `"created_at" BETWEEN '2025-01-01' AND '2025-12-31'`},
 		{name: "bool bounds", expr: Between("flag", false, true), expected: `"flag" BETWEEN FALSE AND TRUE`},
+		{name: "column bounds", expr: Between("x", "lo", "hi"), expected: `"x" BETWEEN "lo" AND "hi"`},
+		{name: "parameter bounds", expr: Between("x", P(1), P(2)), expected: `"x" BETWEEN ?1 AND ?2`},
 		{name: "Between with Fn left", expr: Between(Fn("ABS", "score"), 0, 100), expected: `ABS("score") BETWEEN 0 AND 100`},
 	}
 
@@ -182,9 +216,10 @@ func TestOperator_LikeILike(t *testing.T) {
 		expr     ComparisonExpr
 		expected string
 	}{
-		{name: "Like", expr: Like("name", "'%foo%'"), expected: `"name" LIKE '%foo%'`},
-		{name: "ILike", expr: ILike("name", "'%foo%'"), expected: `"name" ILIKE '%foo%'`},
-		{name: "Like with Fn left", expr: Like(Fn("LOWER", "name"), "'%foo%'"), expected: `LOWER("name") LIKE '%foo%'`},
+		{name: "Like", expr: Like("name", Raw("'%foo%'")), expected: `"name" LIKE '%foo%'`},
+		{name: "ILike", expr: ILike("name", Raw("'%foo%'")), expected: `"name" ILIKE '%foo%'`},
+		{name: "Like parameter", expr: Like("name", P(1)), expected: `"name" LIKE ?1`},
+		{name: "Like with Fn left", expr: Like(Fn("LOWER", "name"), Raw("'%foo%'")), expected: `LOWER("name") LIKE '%foo%'`},
 	}
 
 	for _, tt := range tests {

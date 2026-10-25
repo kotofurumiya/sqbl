@@ -25,7 +25,7 @@ func From(table any) builder.SqlSelectBuilder {
 // Useful for queries like SELECT 1 or SELECT datetime('now').
 //
 //	sqblsqlite.Select("id", "name")
-//	sqblsqlite.Select(sqblsqlite.As("COUNT(*)", "total"))
+//	sqblsqlite.Select(sqblsqlite.As(sqblsqlite.Fn("COUNT", "*"), "total"))
 func Select(columns ...any) builder.SqlSelectBuilder {
 	return newSqblBuilder().Select(columns...)
 }

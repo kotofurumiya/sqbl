@@ -7,90 +7,79 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-func TestIsSimpleIdentifier(t *testing.T) {
+func TestIdent(t *testing.T) {
 	t.Parallel()
+	d := &dialect.PostgresDialect{}
+
 	tests := []struct {
-		name     string
-		input    string
-		expected bool
+		name  string
+		input Ident
+		want  string
 	}{
-		{name: "column", input: "name", expected: true},
-		{name: "qualified column", input: "u.id", expected: true},
-		{name: "multi-part", input: "p.purchased_at", expected: true},
-		{name: "function call", input: "SUM(p.amount)", expected: false},
-		{name: "no-arg function", input: "NOW()", expected: false},
-		{name: "string literal", input: "'value'", expected: false},
-		{name: "empty string", input: "", expected: true},
-		// Spaces are valid in quoted identifiers ("my column"), so a space
-		// alone must not disqualify a string from being treated as an identifier.
-		{name: "identifier with space", input: "my column", expected: true},
-		{name: "injection-like identifier", input: `evil"col; DROP TABLE t; --`, expected: true},
-		{name: "wildcard", input: "*", expected: false},
+		{name: "column", input: "name", want: `"name"`},
+		{name: "qualified column", input: "u.id", want: `"u"."id"`},
+		{name: "identifier with space", input: "my column", want: `"my column"`},
+		// Text that looks like an expression is still a single identifier.
+		{name: "function-like text", input: "COUNT(*)", want: `"COUNT(*)"`},
+		{name: "literal-like text", input: "'value'", want: `"'value'"`},
+		{name: "embedded quote is escaped", input: `evil"col; DROP TABLE t; --`, want: `"evil""col; DROP TABLE t; --"`},
+		{name: "wildcard", input: "*", want: "*"},
+		{name: "qualified wildcard", input: "u.*", want: `"u".*`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// t.Parallel()
-			got := isSimpleIdentifier(tt.input)
-			if got != tt.expected {
-				t.Errorf("isSimpleIdentifier(%q) = %v; want %v", tt.input, got, tt.expected)
+			var buf bytes.Buffer
+			tt.input.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("Ident(%q) = %q; want %q", string(tt.input), got, tt.want)
 			}
 		})
 	}
 }
 
-func TestStringExpr(t *testing.T) {
+func TestRaw(t *testing.T) {
 	t.Parallel()
-	d := &dialect.SimpleDialect{}
-
-	// Function calls are expressions and must pass through unquoted.
 	var buf bytes.Buffer
-	NewStringExpr("COUNT(*)").AppendSQL(&buf, d)
-	if got := buf.String(); got != "COUNT(*)" {
-		t.Errorf("StringExpr(COUNT(*)) = %q; want %q", got, "COUNT(*)")
-	}
-
-	// Plain names — including those with spaces — are identifiers and must be quoted.
-	buf.Reset()
-	NewStringExpr("my column").AppendSQL(&buf, d)
-	if got := buf.String(); got != `"my column"` {
-		t.Errorf("StringExpr(my column) = %q; want %q", got, `"my column"`)
+	Raw(`"count" + 1`).AppendSQL(&buf, &dialect.PostgresDialect{})
+	if got, want := buf.String(), `"count" + 1`; got != want {
+		t.Errorf("Raw = %q; want %q", got, want)
 	}
 }
 
-func TestToFragment(t *testing.T) {
+func TestAppendValue(t *testing.T) {
 	t.Parallel()
-	d := &dialect.SimpleDialect{}
+	d := &dialect.SqliteDialect{}
 
 	tests := []struct {
-		name     string
-		input    any
-		expected string
+		name  string
+		input any
+		want  string
 	}{
-		{
-			name:     "string",
-			input:    "hello",
-			expected: `"hello"`,
-		},
-		{
-			name:     "SqlFragment",
-			input:    NewStringExpr("raw"),
-			expected: `"raw"`,
-		},
-		{
-			name:     "int",
-			input:    42,
-			expected: `"42"`,
-		},
+		{name: "string is identifier", input: "users.id", want: `"users"."id"`},
+		{name: "Ident", input: Ident("name"), want: `"name"`},
+		{name: "Raw", input: Raw("NOW()"), want: "NOW()"},
+		{name: "Parameter", input: P(), want: "?"},
+		{name: "Fn", input: Fn("LOWER", "email"), want: `LOWER("email")`},
+		{name: "int", input: 42, want: "42"},
+		{name: "float", input: 1.5, want: "1.5"},
+		{name: "bool uses dialect", input: true, want: "1"},
+		{name: "nil is NULL", input: nil, want: "NULL"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// t.Parallel()
 			var buf bytes.Buffer
+			AppendValue(&buf, d, tt.input)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("AppendValue(%v) = %q; want %q", tt.input, got, tt.want)
+			}
+
+			// ToFragment must render the same SQL as AppendValue.
+			buf.Reset()
 			ToFragment(tt.input).AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.expected {
-				t.Errorf("ToFragment(%v).AppendSQL() = %q; want %q", tt.input, got, tt.expected)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("ToFragment(%v) = %q; want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -114,9 +103,9 @@ func TestAliased(t *testing.T) {
 		},
 		{
 			name:     "expression alias",
-			source:   "SUM(p.amount)",
+			source:   Fn("SUM", "amount"),
 			alias:    "total",
-			expected: `SUM(p.amount) AS "total"`,
+			expected: `SUM("amount") AS "total"`,
 		},
 	}
 
@@ -126,7 +115,7 @@ func TestAliased(t *testing.T) {
 			var buf bytes.Buffer
 			As(tt.source, tt.alias).AppendSQL(&buf, d)
 			if got := buf.String(); got != tt.expected {
-				t.Errorf("As(%q, %q).AppendSQL() = %q; want %q", tt.source, tt.alias, got, tt.expected)
+				t.Errorf("As(%v, %q).AppendSQL() = %q; want %q", tt.source, tt.alias, got, tt.expected)
 			}
 		})
 	}

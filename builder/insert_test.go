@@ -82,9 +82,23 @@ func TestSqlInsertBuilder_StringValue(t *testing.T) {
 	got := newInsertBuilder().
 		Into("users").
 		Columns("name").
-		Values("'Alice'").
+		Values(syntax.Raw("'Alice'")).
 		ToSql()
 	want := `INSERT INTO "users" ("name") VALUES ('Alice');`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_ValueKinds(t *testing.T) {
+	t.Parallel()
+	got := newInsertBuilder().
+		Into("users").
+		Columns("a", "b", "c", "d").
+		Values(syntax.Fn("NOW"), nil, syntax.Raw("DEFAULT"), "other_col").
+		ToSql()
+	// A plain string is an identifier, even in a value position.
+	want := `INSERT INTO "users" ("a", "b", "c", "d") VALUES (NOW(), NULL, DEFAULT, "other_col");`
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}

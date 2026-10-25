@@ -89,7 +89,7 @@ func RunCRUD(t testing.TB, conn Conn, s Suite) {
 	mustExec(t, conn, ctx, "delete", deleteSQL, 0)
 
 	var count int
-	countSQL := s.From("products").Select("COUNT(*)").ToSql()
+	countSQL := s.From("products").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}

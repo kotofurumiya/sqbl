@@ -51,7 +51,7 @@ func RunInjection_ValueAsParameter(t testing.TB, conn Conn, s Suite) {
 
 	// The table must still exist and contain the original row.
 	var count int
-	countSQL := s.From("victims").Select("COUNT(*)").ToSql()
+	countSQL := s.From("victims").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("count after injection attempt: %v", err)
 	}
@@ -105,7 +105,7 @@ func RunInjection_StoredValue(t testing.TB, conn Conn, s Suite) {
 
 	// Confirm all rows still exist — none of the payloads triggered a DROP.
 	var count int
-	countSQL := s.From("notes").Select("COUNT(*)").ToSql()
+	countSQL := s.From("notes").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -137,7 +137,7 @@ func RunInjection_LikeWildcardsInEqValue(t testing.TB, conn Conn, s Suite) {
 	mustExec(t, conn, ctx, "insert", insertSQL, 1, "go", 2, "golang", 3, "go%lang")
 
 	selectSQL := s.From("tags").
-		Select("COUNT(*)").
+		Select(syntax.Fn("COUNT", "*")).
 		Where(syntax.Eq("name", syntax.P(1))).
 		ToSql()
 
@@ -208,7 +208,7 @@ func RunInjection_OrderByIdentifier(t testing.TB, conn Conn, s Suite) {
 	}
 
 	var count int
-	countSQL := s.From("victims").Select("COUNT(*)").ToSql()
+	countSQL := s.From("victims").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("table inaccessible after ORDER BY injection attempt: %v", err)
 	}
@@ -259,7 +259,7 @@ func RunInjection_TableNameIdentifier(t testing.TB, conn Conn, s Suite) {
 	}
 
 	var count int
-	countSQL := s.From("victims").Select("COUNT(*)").ToSql()
+	countSQL := s.From("victims").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("table inaccessible after table-name injection attempt: %v", err)
 	}
@@ -309,7 +309,7 @@ func RunInjection_SelectColumnIdentifier(t testing.TB, conn Conn, s Suite) {
 	}
 
 	var count int
-	countSQL := s.From("victims").Select("COUNT(*)").ToSql()
+	countSQL := s.From("victims").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("table inaccessible after SELECT column injection attempt: %v", err)
 	}
@@ -356,7 +356,7 @@ func RunInjection_AliasIdentifier(t testing.TB, conn Conn, s Suite) {
 	}
 
 	var count int
-	countSQL := s.From("victims").Select("COUNT(*)").ToSql()
+	countSQL := s.From("victims").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("table inaccessible after alias injection attempt: %v", err)
 	}
@@ -412,7 +412,7 @@ func RunInjection_CommentBasedPayloads(t testing.TB, conn Conn, s Suite) {
 	}
 
 	var count int
-	countSQL := s.From("victims").Select("COUNT(*)").ToSql()
+	countSQL := s.From("victims").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("count after comment-payload inserts: %v", err)
 	}
@@ -462,7 +462,7 @@ func RunInjection_StackedInsertPayload(t testing.TB, conn Conn, s Suite) {
 
 	// Row count must still be 1 — the injected INSERT must not have executed.
 	var count int
-	countSQL := s.From("victims").Select("COUNT(*)").ToSql()
+	countSQL := s.From("victims").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("count after stacked-insert attempt: %v", err)
 	}
@@ -509,7 +509,7 @@ func RunInjection_QuotedIdentifier(t testing.TB, conn Conn, s Suite) {
 
 	// The table must still exist, confirming no DROP was executed.
 	var count int
-	countSQL := s.From("t").Select("COUNT(*)").ToSql()
+	countSQL := s.From("t").Select(syntax.Fn("COUNT", "*")).ToSql()
 	if err := conn.QueryRow(ctx, countSQL).Scan(&count); err != nil {
 		t.Fatalf("table no longer accessible after identifier injection attempt: %v", err)
 	}
