@@ -157,7 +157,7 @@ func Like(left any, pattern any) syntax.ComparisonExpr {
 // P creates a bind parameter placeholder.
 //
 //	sqblsqlite.P()          → positional: ?
-//	sqblsqlite.P(1)         → indexed:    ?
+//	sqblsqlite.P(1)         → indexed:    ?1
 //	sqblsqlite.P(":status") → named:      :status
 func P(args ...any) syntax.Parameter {
 	return syntax.P(args...)

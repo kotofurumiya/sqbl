@@ -8,7 +8,7 @@
 //
 //	q := sqbl.From("users").Select("id").Where(sqbl.Eq("id", sqbl.P(1)))
 //	q.ToSqlWithDialect(&dialect.PostgresDialect{}) // SELECT "id" FROM "users" WHERE "id" = $1
-//	q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?
+//	q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?1
 package sqbl
 
 import "github.com/kotofurumiya/sqbl/builder"

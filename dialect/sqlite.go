@@ -2,6 +2,7 @@ package dialect
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 )
 
@@ -48,10 +49,16 @@ func (s *SqliteDialect) PlaceholderPositional(buf *bytes.Buffer) {
 	buf.WriteByte('?')
 }
 
-// PlaceholderIndexed writes the indexed bind parameter "?" into buf.
-// SQLite uses ? for all indexed placeholders, ignoring the index.
-func (s *SqliteDialect) PlaceholderIndexed(buf *bytes.Buffer, _ int) {
+// PlaceholderIndexed writes the numbered bind parameter "?N" into buf.
+// Index starts from 1. The number binds the argument by position, so the same
+// index can appear more than once and in any order.
+//
+// Examples:
+//
+//	1 -> ?1, 2 -> ?2
+func (s *SqliteDialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
 	buf.WriteByte('?')
+	buf.WriteString(strconv.Itoa(index))
 }
 
 // Bool writes the SQL boolean literal for b into buf.

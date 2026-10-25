@@ -42,7 +42,7 @@ func TestParameter_Indexed(t *testing.T) {
 		{"postgres $1", &dialect.PostgresDialect{}, 1, "$1"},
 		{"postgres $3", &dialect.PostgresDialect{}, 3, "$3"},
 		{"mysql", &dialect.MysqlDialect{}, 1, "?"},
-		{"sqlite", &dialect.SqliteDialect{}, 1, "?"},
+		{"sqlite", &dialect.SqliteDialect{}, 1, "?1"},
 	}
 
 	for _, tt := range tests {

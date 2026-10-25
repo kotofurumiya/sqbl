@@ -20,7 +20,7 @@ func TestDialectFree_RendersPerDialect(t *testing.T) {
 	}{
 		{name: "PostgreSQL", d: &dialect.PostgresDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = $1`},
 		{name: "MySQL", d: &dialect.MysqlDialect{}, want: "SELECT `id` FROM `users` WHERE `id` = ?"},
-		{name: "SQLite", d: &dialect.SqliteDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = ?`},
+		{name: "SQLite", d: &dialect.SqliteDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = ?1`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
