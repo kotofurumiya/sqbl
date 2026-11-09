@@ -77,6 +77,25 @@ func runInjectionValues(t *testing.T, conn Conn, s Suite) {
 	for i, p := range payloads {
 		AssertSlice(t, QueryColumn[int](t, conn, match, p), []int{i + 1})
 	}
+
+	// Values that cannot be written safely as SQL must stop the render instead
+	// of reaching the database. A named string type used to be pasted in as-is.
+	t.Run("RefusedBeforeExecution", func(t *testing.T) {
+		type role string
+		refused := []struct {
+			name string
+			b    interface{ ToSQL() (string, error) }
+		}{
+			{"named string value", s.From("notes").Where(syntax.Eq("content", role("' OR '1'='1")))},
+			{"placeholder name", s.From("notes").Where(syntax.Eq("content", syntax.P("x' OR '1'='1")))},
+		}
+		for _, tt := range refused {
+			if sql, err := tt.b.ToSQL(); err == nil {
+				t.Errorf("%s: rendered %q; want an error", tt.name, sql)
+			}
+		}
+		AssertCount(t, conn, "notes", len(payloads))
+	})
 }
 
 // runInjectionIdentifiers passes a payload as an identifier in each position

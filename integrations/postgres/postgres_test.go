@@ -74,12 +74,14 @@ var suite = shared.Suite{
 	DropIndex:   sqblpg.DropIndex,
 	AlterTable:  sqblpg.AlterTable,
 
-	IndexedParams: true,
-	FullJoin:      true,
-	SetOpAll:      true,
-	Returning:     true,
-	OnConflict:    true,
-	PartialIndex:  true,
+	IndexedParams:            true,
+	FullJoin:                 true,
+	SetOpAll:                 true,
+	Returning:                true,
+	OnConflict:               true,
+	PartialIndex:             true,
+	ParenthesizedSetOperands: true,
+	MultiAlter:               true,
 }
 
 func TestShared(t *testing.T) {

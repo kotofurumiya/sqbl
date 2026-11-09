@@ -64,6 +64,11 @@ func runFiltering(t *testing.T, conn Conn, s Suite) {
 			[]any{"books", 2800},
 			[]int{1, 2},
 		},
+		// Dynamic filters often end up empty; each must still be valid SQL.
+		{"EmptyAnd", syntax.And(), nil, []int{1, 2, 3, 4, 5, 6}},
+		{"EmptyOr", syntax.Or(), nil, nil},
+		{"EmptyIn", syntax.In("category"), nil, nil},
+		{"EmptyNotIn", syntax.NotIn("category"), nil, []int{1, 2, 3, 4, 5, 6}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,6 +76,23 @@ func runFiltering(t *testing.T, conn Conn, s Suite) {
 			AssertSlice(t, QueryColumn[int](t, conn, sql, tt.args...), tt.want)
 		})
 	}
+
+	// A second Where narrows the first instead of replacing it, so a shared base
+	// filter survives.
+	t.Run("WhereTwice", func(t *testing.T) {
+		sql := s.From("products").Select("id").
+			Where(syntax.Eq("category", syntax.P(1))).
+			Where(syntax.Lt("price", syntax.P(2))).
+			MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, sql, "books", 2800), []int{2})
+	})
+
+	// Name length orders the rows differently from both id and name, so the
+	// result proves the expression itself was sorted on.
+	t.Run("OrderByExpression", func(t *testing.T) {
+		sql := s.From("products").Select("id").OrderBy(syntax.Asc(syntax.Fn("LENGTH", "name"))).MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{4, 6, 5, 2, 1, 3})
+	})
 
 	t.Run("Distinct", func(t *testing.T) {
 		sql := s.From("products").Select("category").Distinct().OrderBy(syntax.Asc("category")).MustSQL()
@@ -283,6 +305,16 @@ func runCTE(t *testing.T, conn Conn, s Suite) {
 		return v, r.Scan(&v.name, &v.total)
 	}, sql, "2025-01-01", "2025-01-31", 5000)
 	AssertSlice(t, got, []repTotal{{"Alice", 8000}, {"Bob", 8000}})
+
+	// "order" is a reserved word; the CTE works only because its name is quoted.
+	t.Run("ReservedName", func(t *testing.T) {
+		var count int
+		big := s.From("sales").Select("id").Where(syntax.Gt("amount", syntax.P(1)))
+		MustScan(t, conn, s.From("order").With("order", big).Select(syntax.Fn("COUNT", "*")).MustSQL(), []any{5000}, &count)
+		if count != 2 {
+			t.Errorf("COUNT(*) FROM the CTE = %d; want 2", count)
+		}
+	})
 }
 
 // runRecursiveCTE walks an org chart to collect every direct and indirect
@@ -356,8 +388,60 @@ func runSetOperations(t *testing.T, conn Conn, s Suite) {
 			if tt.needAll && !s.SetOpAll {
 				t.Skip("INTERSECT ALL / EXCEPT ALL are not supported")
 			}
-			// A set operation has no overall ORDER BY in sqbl, so sort here.
 			got := QueryColumn[int](t, conn, tt.query.MustSQL())
+			slices.Sort(got)
+			AssertSlice(t, got, tt.want)
+		})
+	}
+
+	// ORDER BY, LIMIT and OFFSET on a compound apply to the combined result.
+	t.Run("OrderByLimitOffset", func(t *testing.T) {
+		sql := premium.Union(newsletter).OrderBy(syntax.Desc("user_id")).Limit(2).Offset(1).MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{4, 3})
+	})
+
+	t.Run("AsSubquery", func(t *testing.T) {
+		in := s.From("newsletter").Select("user_id").
+			Where(syntax.In("user_id", premium.Intersect(newsletter))).
+			OrderBy(syntax.Asc("user_id")).
+			MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, in), []int{2, 3})
+
+		var count int
+		from := s.From(syntax.As(premium.Union(newsletter), "members")).Select(syntax.Fn("COUNT", "*")).MustSQL()
+		MustScan(t, conn, from, nil, &count)
+		if count != 5 {
+			t.Errorf("COUNT(*) over the union = %d; want 5", count)
+		}
+	})
+
+	// Grouping must follow the call chain. Each case is chosen so that the
+	// ungrouped reading returns different rows, which would go unnoticed.
+	premiumOnly := func(id int) builder.SelectBuilder {
+		return s.From("premium").Select("user_id").Where(syntax.Eq("user_id", id))
+	}
+	newsletterOnly := func(id int) builder.SelectBuilder {
+		return s.From("newsletter").Select("user_id").Where(syntax.Eq("user_id", id))
+	}
+	grouped := []struct {
+		name  string
+		query builder.CompoundBuilder
+		want  []int
+	}{
+		// {1,2,3} EXCEPT ({2} UNION {3}) = {1}; read flat it would be {1,3}.
+		{"NestedRightOperand", premium.Except(newsletterOnly(2).Union(premiumOnly(3))), []int{1}},
+		// ({1,2,3} UNION {2,3,4,5}) INTERSECT {1} = {1}; with INTERSECT binding first it would be {1,2,3}.
+		{"IntersectAfterUnion", premium.Union(newsletter).Intersect(premiumOnly(1)), []int{1}},
+	}
+	for _, tt := range grouped {
+		t.Run(tt.name, func(t *testing.T) {
+			sql := tt.query.MustSQL()
+			if !s.ParenthesizedSetOperands {
+				// Rejecting the query is acceptable; silently answering a different question is not.
+				MustFail(t, conn, "parenthesized set operand", sql)
+				return
+			}
+			got := QueryColumn[int](t, conn, sql)
 			slices.Sort(got)
 			AssertSlice(t, got, tt.want)
 		})

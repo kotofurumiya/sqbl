@@ -139,3 +139,36 @@ func runSchemaEvolution(t *testing.T, conn Conn, s Suite) {
 	MustExec(t, conn, s.DropTable(renamed).IfExists().MustSQL())
 	MustFail(t, conn, "dropped table", s.From(renamed).Select("id").MustSQL())
 }
+
+// runMultiAlter applies several ALTER TABLE operations in one statement and
+// checks that every one of them took effect.
+func runMultiAlter(t *testing.T, conn Conn, s Suite) {
+	if !s.MultiAlter {
+		t.Skip("ALTER TABLE accepts only one operation per statement")
+	}
+	const table = "it_ma_users"
+	UseTables(t, conn, table)
+
+	MustExec(t, conn,
+		s.CreateTable(table).
+			Column("id", "INTEGER", "NOT NULL").
+			Column("legacy", "VARCHAR(16)").
+			PrimaryKey("id").
+			MustSQL())
+	MustExec(t, conn, s.InsertInto(table).Columns("id").Values(syntax.P(1)).MustSQL(), 1)
+
+	MustExec(t, conn, s.AlterTable(table).
+		AddColumn("nickname", "VARCHAR(16)").
+		AddColumn("score", "INTEGER").
+		DropColumn("legacy").
+		MustSQL())
+
+	MustExec(t, conn, s.Update(table).Set("nickname", syntax.P(1)).Set("score", syntax.P(2)).MustSQL(), "al", 7)
+	var nickname string
+	var score int
+	MustScan(t, conn, s.From(table).Select("nickname", "score").MustSQL(), nil, &nickname, &score)
+	if nickname != "al" || score != 7 {
+		t.Errorf("added columns = (%q, %d); want (%q, 7)", nickname, score, "al")
+	}
+	MustFail(t, conn, "dropped column", s.Update(table).Set("legacy", syntax.P(1)).MustSQL(), "x")
+}

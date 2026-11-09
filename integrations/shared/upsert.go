@@ -38,6 +38,14 @@ func runReturning(t *testing.T, conn Conn, s Suite) {
 		t.Errorf("DELETE RETURNING = %d; want 1", id)
 	}
 	AssertCount(t, conn, "articles", 0)
+
+	// "*" stays unquoted, so RETURNING * yields every column.
+	MustScan(t, conn,
+		s.InsertInto("articles").Columns("id", "title").Values(syntax.P(1), syntax.P(2)).Returning("*").MustSQL(),
+		[]any{2, "Star"}, &id, &title)
+	if id != 2 || title != "Star" {
+		t.Errorf("INSERT RETURNING * = (%d, %q); want (2, %q)", id, title, "Star")
+	}
 }
 
 // runOnConflict covers each ON CONFLICT form: ignoring the row, overwriting it

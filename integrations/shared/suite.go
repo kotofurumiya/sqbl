@@ -70,6 +70,11 @@ type Suite struct {
 	OnConflict bool
 	// PartialIndex is set when CREATE INDEX accepts a WHERE clause.
 	PartialIndex bool
+	// ParenthesizedSetOperands is set when a set operation accepts a
+	// parenthesized operand, which sqbl emits to keep grouping explicit.
+	ParenthesizedSetOperands bool
+	// MultiAlter is set when one ALTER TABLE statement accepts several operations.
+	MultiAlter bool
 }
 
 // scenarios lists every shared scenario; RunAll runs each as a subtest.
@@ -92,6 +97,7 @@ var scenarios = []struct {
 	{"CreateTable", runCreateTable},
 	{"CreateIndex", runCreateIndex},
 	{"SchemaEvolution", runSchemaEvolution},
+	{"MultiAlter", runMultiAlter},
 	{"Returning", runReturning},
 	{"OnConflict", runOnConflict},
 }

@@ -110,9 +110,11 @@ var suite = shared.Suite{
 	DropIndex:   sqblmysql.DropIndex,
 	AlterTable:  sqblmysql.AlterTable,
 
-	DropIndexOnTable: true,
-	PositionalParams: true,
-	SetOpAll:         true,
+	DropIndexOnTable:         true,
+	PositionalParams:         true,
+	SetOpAll:                 true,
+	ParenthesizedSetOperands: true,
+	MultiAlter:               true,
 }
 
 func TestShared(t *testing.T) {
@@ -156,4 +158,29 @@ func TestOnDuplicateKeyUpdate(t *testing.T) {
 		MustSQL()
 	shared.MustExec(t, conn, structured, "go", "Golang", 1)
 	assertRow("Golang", 12)
+}
+
+// TestReturning covers the RETURNING forms MariaDB supports (INSERT and
+// DELETE, not UPDATE), which keeps the shared Returning scenario off for MySQL.
+func TestReturning(t *testing.T) {
+	t.Parallel()
+	conn := openConn(t)
+	shared.MustExec(t, conn, `CREATE TEMPORARY TABLE articles (id INTEGER PRIMARY KEY, title VARCHAR(64) NOT NULL)`)
+
+	var id int
+	var title string
+	shared.MustScan(t, conn,
+		sqblmysql.InsertInto("articles").Columns("id", "title").Values(sqblmysql.P(), sqblmysql.P()).Returning("*").MustSQL(),
+		[]any{1, "Hello"}, &id, &title)
+	if id != 1 || title != "Hello" {
+		t.Errorf("INSERT RETURNING * = (%d, %q); want (1, %q)", id, title, "Hello")
+	}
+
+	shared.MustScan(t, conn,
+		sqblmysql.DeleteFrom("articles").Where(sqblmysql.Eq("id", sqblmysql.P())).Returning("title").MustSQL(),
+		[]any{1}, &title)
+	if title != "Hello" {
+		t.Errorf("DELETE RETURNING = %q; want %q", title, "Hello")
+	}
+	shared.AssertCount(t, conn, "articles", 0)
 }
