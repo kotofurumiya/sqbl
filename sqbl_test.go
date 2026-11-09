@@ -7,97 +7,98 @@ import (
 	"github.com/kotofurumiya/sqbl"
 	"github.com/kotofurumiya/sqbl/builder"
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqltesting"
 )
 
-func TestDialectFree_RendersPerDialect(t *testing.T) {
+// One dialect-free builder must render each dialect's quoting, placeholders,
+// and boolean literals when given that dialect.
+func TestRendersPerDialect(t *testing.T) {
 	t.Parallel()
-	q := sqbl.From("users").Select("id").Where(sqbl.Eq("id", sqbl.P(1)))
+	q := sqbl.From("users").
+		Select("u.id").
+		Where(sqbl.And(sqbl.Eq("u.active", true), sqbl.Eq("u.id", sqbl.P(1))))
 
 	tests := []struct {
 		name string
 		d    dialect.SqlDialect
 		want string
 	}{
-		{name: "PostgreSQL", d: &dialect.PostgresDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = $1`},
-		{name: "MySQL", d: &dialect.MysqlDialect{}, want: "SELECT `id` FROM `users` WHERE `id` = ?"},
-		{name: "SQLite", d: &dialect.SqliteDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = ?1`},
+		{"PostgreSQL", &dialect.PostgresDialect{}, `SELECT "u"."id" FROM "users" WHERE "u"."active" = TRUE AND "u"."id" = $1`},
+		{"MySQL", &dialect.MysqlDialect{}, "SELECT `u`.`id` FROM `users` WHERE `u`.`active` = TRUE AND `u`.`id` = ?"},
+		{"SQLite", &dialect.SqliteDialect{}, `SELECT "u"."id" FROM "users" WHERE "u"."active" = 1 AND "u"."id" = ?1`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := q.ToSqlWithDialect(tt.d); got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
-			}
+			t.Parallel()
+			sqltesting.AssertSQL(t, q.ToSqlWithDialect(tt.d), tt.want)
 		})
 	}
 }
 
-func TestDialectFree_EntryPoints(t *testing.T) {
+func TestEntryPoints(t *testing.T) {
 	t.Parallel()
-	d := &dialect.PostgresDialect{}
-
 	tests := []struct {
 		name string
 		b    builder.SqlBuilder
 		want string
 	}{
-		{name: "From", b: sqbl.From("users"), want: `SELECT * FROM "users"`},
-		{name: "Select", b: sqbl.Select(sqbl.Fn("NOW")), want: `SELECT NOW()`},
-		{name: "InsertInto", b: sqbl.InsertInto("users").Columns("name").Values(sqbl.P(1)), want: `INSERT INTO "users" ("name") VALUES ($1)`},
-		{name: "Update", b: sqbl.Update("users").Set("name", sqbl.P(1)), want: `UPDATE "users" SET "name" = $1`},
-		{name: "DeleteFrom", b: sqbl.DeleteFrom("users"), want: `DELETE FROM "users"`},
-		{name: "CreateTable", b: sqbl.CreateTable("users").Column("id", "BIGINT"), want: `CREATE TABLE "users" ("id" BIGINT)`},
-		{name: "CreateIndex", b: sqbl.CreateIndex("idx").On("users").Columns("email"), want: `CREATE INDEX "idx" ON "users" ("email")`},
-		{name: "DropTable", b: sqbl.DropTable("users"), want: `DROP TABLE "users"`},
-		{name: "DropIndex", b: sqbl.DropIndex("idx"), want: `DROP INDEX "idx"`},
-		{name: "AlterTable", b: sqbl.AlterTable("users").AddColumn("bio", "TEXT"), want: `ALTER TABLE "users" ADD COLUMN "bio" TEXT`},
-		{name: "CreateDatabase", b: sqbl.CreateDatabase("app_test"), want: `CREATE DATABASE "app_test"`},
-		{name: "DropDatabase", b: sqbl.DropDatabase("app_test"), want: `DROP DATABASE "app_test"`},
+		{"From", sqbl.From("users"), `SELECT * FROM "users"`},
+		{"Select", sqbl.Select("id"), `SELECT "id"`},
+		{"InsertInto", sqbl.InsertInto("users").Columns("name").Values(sqbl.P(1)), `INSERT INTO "users" ("name") VALUES ($1)`},
+		{"Update", sqbl.Update("users").Set("name", sqbl.P(1)), `UPDATE "users" SET "name" = $1`},
+		{"DeleteFrom", sqbl.DeleteFrom("users"), `DELETE FROM "users"`},
+		{"CreateTable", sqbl.CreateTable("users").Column("id", "BIGINT"), `CREATE TABLE "users" ("id" BIGINT)`},
+		{"CreateIndex", sqbl.CreateIndex("idx").On("users").Columns("email"), `CREATE INDEX "idx" ON "users" ("email")`},
+		{"DropTable", sqbl.DropTable("users"), `DROP TABLE "users"`},
+		{"DropIndex", sqbl.DropIndex("idx"), `DROP INDEX "idx"`},
+		{"AlterTable", sqbl.AlterTable("users").AddColumn("bio", "TEXT"), `ALTER TABLE "users" ADD COLUMN "bio" TEXT`},
+		{"CreateDatabase", sqbl.CreateDatabase("app"), `CREATE DATABASE "app"`},
+		{"DropDatabase", sqbl.DropDatabase("app"), `DROP DATABASE "app"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.b.ToSqlWithDialect(d); got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
-			}
+			t.Parallel()
+			sqltesting.AssertSQL(t, tt.b.ToSqlWithDialect(&dialect.PostgresDialect{}), tt.want)
 		})
 	}
 }
 
-func TestDialectFree_PanicsWithoutDialect(t *testing.T) {
+// Rendering without a dialect is a programming error, so every builder must
+// panic with a hint pointing at ToSqlWithDialect instead of emitting broken SQL.
+func TestPanicsWithoutDialect(t *testing.T) {
 	t.Parallel()
-	builders := []struct {
+	tests := []struct {
 		name string
 		b    builder.SqlBuilder
 	}{
-		{name: "Select", b: sqbl.From("users")},
-		{name: "Insert", b: sqbl.InsertInto("users")},
-		{name: "Update", b: sqbl.Update("users")},
-		{name: "Delete", b: sqbl.DeleteFrom("users")},
-		{name: "CreateTable", b: sqbl.CreateTable("users")},
-		{name: "CreateIndex", b: sqbl.CreateIndex("idx")},
-		{name: "DropTable", b: sqbl.DropTable("users")},
-		{name: "DropIndex", b: sqbl.DropIndex("idx")},
-		{name: "AlterTable", b: sqbl.AlterTable("users")},
-		{name: "CreateDatabase", b: sqbl.CreateDatabase("app_test")},
-		{name: "DropDatabase", b: sqbl.DropDatabase("app_test")},
+		{"From", sqbl.From("users")},
+		{"InsertInto", sqbl.InsertInto("users")},
+		{"Update", sqbl.Update("users")},
+		{"DeleteFrom", sqbl.DeleteFrom("users")},
+		{"CreateTable", sqbl.CreateTable("users")},
+		{"CreateIndex", sqbl.CreateIndex("idx")},
+		{"DropTable", sqbl.DropTable("users")},
+		{"DropIndex", sqbl.DropIndex("idx")},
+		{"AlterTable", sqbl.AlterTable("users")},
+		{"CreateDatabase", sqbl.CreateDatabase("app")},
+		{"DropDatabase", sqbl.DropDatabase("app")},
 	}
-	for _, tt := range builders {
-		t.Run(tt.name+"/ToSql", func(t *testing.T) {
-			assertDialectPanic(t, func() { tt.b.ToSql() })
-		})
-		t.Run(tt.name+"/ToSqlWithDialect(nil)", func(t *testing.T) {
-			assertDialectPanic(t, func() { tt.b.ToSqlWithDialect(nil) })
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertDialectPanic(t, "ToSql", func() { tt.b.ToSql() })
+			assertDialectPanic(t, "ToSqlWithDialect(nil)", func() { tt.b.ToSqlWithDialect(nil) })
 		})
 	}
 }
 
-func assertDialectPanic(t *testing.T, f func()) {
+func assertDialectPanic(t *testing.T, call string, f func()) {
 	t.Helper()
 	defer func() {
 		t.Helper()
-		r := recover()
-		msg, ok := r.(string)
+		msg, ok := recover().(string)
 		if !ok || !strings.Contains(msg, "ToSqlWithDialect") {
-			t.Errorf("expected a panic mentioning ToSqlWithDialect, got %v", r)
+			t.Errorf("%s: want a panic mentioning ToSqlWithDialect, got %q", call, msg)
 		}
 	}()
 	f()

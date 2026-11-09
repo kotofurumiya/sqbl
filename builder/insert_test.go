@@ -3,540 +3,183 @@ package builder_test
 import (
 	"testing"
 
-	"github.com/kotofurumiya/sqbl/builder"
-	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqltesting"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newInsertBuilder() builder.SqlInsertBuilder {
-	return (builder.SqlInsertBuilder{}).Dialect(&dialect.SimpleDialect{})
+func TestSqlInsertBuilder_Values(t *testing.T) {
+	t.Parallel()
+	users := newInsert().Into("users").Columns("name", "email")
+
+	runSQLCases(t, []sqlCase{
+		{
+			name: "single row",
+			b:    users.Values(syntax.P(1), syntax.P(2)),
+			want: `INSERT INTO "users" ("name", "email") VALUES ($1, $2);`,
+		},
+		{
+			name: "rows accumulate in call order",
+			b:    users.Values(syntax.P(1), syntax.P(2)).Values(syntax.P(3), syntax.P(4)),
+			want: `INSERT INTO "users" ("name", "email") VALUES ($1, $2), ($3, $4);`,
+		},
+		{
+			name: "no column list",
+			b:    newInsert().Into("users").Values(syntax.P(1), syntax.P(2)),
+			want: `INSERT INTO "users" VALUES ($1, $2);`,
+		},
+		{
+			name: "columns are replaced by a later call",
+			b:    users.Columns("id").Values(syntax.P(1)),
+			want: `INSERT INTO "users" ("id") VALUES ($1);`,
+		},
+		{
+			// A plain string is an identifier even in a value position, so a
+			// string literal has to be passed with Raw or as a parameter.
+			name: "value kinds",
+			b: newInsert().Into("t").Values(
+				syntax.P(), syntax.P(":name"), 42, 1.5, true, false, nil,
+				"other_col", syntax.Raw("'text'"), syntax.Raw("DEFAULT"), syntax.Fn("NOW"),
+			),
+			want: `INSERT INTO "t" VALUES (?, :name, 42, 1.5, TRUE, FALSE, NULL, "other_col", 'text', DEFAULT, NOW());`,
+		},
+		{
+			name: "no rows renders no VALUES clause",
+			b:    newInsert().Into("users").Columns("name"),
+			want: `INSERT INTO "users" ("name");`,
+		},
+		{
+			name: "returning",
+			b:    users.Values(syntax.P(1), syntax.P(2)).Returning("id", "created_at"),
+			want: `INSERT INTO "users" ("name", "email") VALUES ($1, $2) RETURNING "id", "created_at";`,
+		},
+	})
 }
 
-func TestSqlInsertBuilder_SingleRow(t *testing.T) {
+func TestSqlInsertBuilder_ConflictHandling(t *testing.T) {
 	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("name", "email").
-		Values(syntax.P(1), syntax.P(2)).
-		ToSql()
-	want := `INSERT INTO "users" ("name", "email") VALUES (?1, ?2);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
+	tags := newInsert().Into("tags").Columns("name", "count").Values(syntax.P(1), syntax.P(2))
+
+	runSQLCases(t, []sqlCase{
+		// ON CONFLICT (PostgreSQL / SQLite)
+		{
+			name: "do nothing without target",
+			b:    tags.OnConflictDoNothing(),
+			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2) ON CONFLICT DO NOTHING;`,
+		},
+		{
+			name: "do nothing with target and index predicate",
+			b:    tags.OnConflict("name").OnConflictWhere(syntax.Eq("active", true)).OnConflictDoNothing(),
+			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2) ON CONFLICT ("name") WHERE "active" = TRUE DO NOTHING;`,
+		},
+		{
+			// An index predicate without target columns is invalid SQL.
+			name: "index predicate is dropped without target",
+			b:    tags.OnConflictWhere(syntax.Eq("active", true)).OnConflictDoNothing(),
+			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2) ON CONFLICT DO NOTHING;`,
+		},
+		{
+			name: "target alone renders nothing",
+			b:    tags.OnConflict("name"),
+			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2);`,
+		},
+		{
+			name: "do update with raw and structured assignments in call order",
+			b: tags.OnConflict("name", "kind").
+				DoUpdate(`"count" = "tags"."count" + 1`, `"seen" = TRUE`).
+				DoUpdateSet("name", "excluded.name").
+				DoUpdateSet("note", syntax.P(3)),
+			want: `
+				INSERT INTO "tags" ("name", "count") VALUES ($1, $2)
+				ON CONFLICT ("name", "kind") DO UPDATE SET
+				"count" = "tags"."count" + 1, "seen" = TRUE, "name" = "excluded"."name", "note" = $3;`,
+		},
+		{
+			name: "do update with index predicate and update condition",
+			b: tags.OnConflict("name").
+				OnConflictWhere(syntax.Eq("active", true)).
+				DoUpdateSet("count", "excluded.count").
+				DoUpdateWhere(syntax.Lt("tags.count", "excluded.count")),
+			want: `
+				INSERT INTO "tags" ("name", "count") VALUES ($1, $2)
+				ON CONFLICT ("name") WHERE "active" = TRUE
+				DO UPDATE SET "count" = "excluded"."count"
+				WHERE "tags"."count" < "excluded"."count";`,
+		},
+		{
+			name: "update condition alone renders nothing",
+			b:    tags.OnConflict("name").DoUpdateWhere(syntax.Eq("a", 1)),
+			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2);`,
+		},
+
+		// ON DUPLICATE KEY UPDATE (MySQL)
+		{
+			name: "on duplicate key update with raw and structured assignments in call order",
+			b: tags.
+				OnDuplicateKeyUpdate(`"count" = "count" + 1`).
+				OnDuplicateKeyUpdateSet("name", syntax.Fn("VALUES", "name")),
+			want: `
+				INSERT INTO "tags" ("name", "count") VALUES ($1, $2)
+				ON DUPLICATE KEY UPDATE "count" = "count" + 1, "name" = VALUES("name");`,
+		},
+
+		// INSERT OR ... (SQLite)
+		{"or replace", tags.OrReplace(), `INSERT OR REPLACE INTO "tags" ("name", "count") VALUES ($1, $2);`},
+		{"or ignore", tags.OrIgnore(), `INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2);`},
+		{"or abort", tags.OrAbort(), `INSERT OR ABORT INTO "tags" ("name", "count") VALUES ($1, $2);`},
+		{"or fail", tags.OrFail(), `INSERT OR FAIL INTO "tags" ("name", "count") VALUES ($1, $2);`},
+		{"or rollback", tags.OrRollback(), `INSERT OR ROLLBACK INTO "tags" ("name", "count") VALUES ($1, $2);`},
+		{"later algorithm wins", tags.OrReplace().OrIgnore(), `INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2);`},
+	})
 }
 
-func TestSqlInsertBuilder_MultipleRows(t *testing.T) {
+// TestSqlInsertBuilder_AllClauses pins the clause order. sqbl does not validate
+// combinations, so clauses from different databases are rendered side by side.
+func TestSqlInsertBuilder_AllClauses(t *testing.T) {
 	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("name", "email").
-		Values(syntax.P(1), syntax.P(2)).
-		Values(syntax.P(3), syntax.P(4)).
-		ToSql()
-	want := `INSERT INTO "users" ("name", "email") VALUES (?1, ?2), (?3, ?4);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_NoColumns(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Values(syntax.P(1), syntax.P(2)).
-		ToSql()
-	want := `INSERT INTO "users" VALUES (?1, ?2);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_BoolValue(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("name", "active").
-		Values(syntax.P(1), true).
-		ToSql()
-	want := `INSERT INTO "users" ("name", "active") VALUES (?1, TRUE);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_PositionalParam(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("logs").
-		Columns("message").
-		Values(syntax.P()).
-		ToSql()
-	want := `INSERT INTO "logs" ("message") VALUES (?);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_StringValue(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("name").
-		Values(syntax.Raw("'Alice'")).
-		ToSql()
-	want := `INSERT INTO "users" ("name") VALUES ('Alice');`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_ValueKinds(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("a", "b", "c", "d").
-		Values(syntax.Fn("NOW"), nil, syntax.Raw("DEFAULT"), "other_col").
-		ToSql()
-	// A plain string is an identifier, even in a value position.
-	want := `INSERT INTO "users" ("a", "b", "c", "d") VALUES (NOW(), NULL, DEFAULT, "other_col");`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_IntValue(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("counters").
-		Columns("n").
-		Values(42).
-		ToSql()
-	want := `INSERT INTO "counters" ("n") VALUES (42);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_ToSqlWithDialect(t *testing.T) {
-	t.Parallel()
-	d := &dialect.SimpleDialect{}
-	got := newInsertBuilder().
-		Into("users").
-		Columns("name").
-		Values(syntax.P(1)).
-		ToSqlWithDialect(d)
-	want := `INSERT INTO "users" ("name") VALUES (?1)`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_ImplementsSqlBuilder(t *testing.T) {
-	t.Parallel()
-	var _ builder.SqlBuilder = newInsertBuilder()
-}
-
-func TestSqlInsertBuilder_Returning(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("name", "email").
-		Values(syntax.P(1), syntax.P(2)).
-		Returning("id", "created_at").
-		ToSql()
-	want := `INSERT INTO "users" ("name", "email") VALUES (?1, ?2) RETURNING "id", "created_at";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictDoNothing(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("tags").
-		Columns("name").
-		Values(syntax.P(1)).
-		OnConflictDoNothing().
-		ToSql()
-	want := `INSERT INTO "tags" ("name") VALUES (?1) ON CONFLICT DO NOTHING;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictDoNothing_WithTarget(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("tags").
-		Columns("name").
-		Values(syntax.P(1)).
+	got := newInsert().
+		Returning("id").
+		OnDuplicateKeyUpdateSet("count", 0).
+		DoUpdateWhere(syntax.Gt("count", 0)).
+		DoUpdateSet("count", 1).
+		OnConflictWhere(syntax.Eq("active", true)).
 		OnConflict("name").
-		OnConflictDoNothing().
-		ToSql()
-	want := `INSERT INTO "tags" ("name") VALUES (?1) ON CONFLICT ("name") DO NOTHING;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictDoUpdate(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("user_settings").
-		Columns("user_id", "key", "value").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("user_id", "key").
-		DoUpdate("value = EXCLUDED.value").
-		ToSql()
-	want := `INSERT INTO "user_settings" ("user_id", "key", "value") VALUES (?1, ?2, ?3) ON CONFLICT ("user_id", "key") DO UPDATE SET value = EXCLUDED.value;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictDoUpdate_MultipleSet(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("profiles").
-		Columns("user_id", "name", "bio").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("user_id").
-		DoUpdate("name = EXCLUDED.name", "bio = EXCLUDED.bio").
-		ToSql()
-	want := `INSERT INTO "profiles" ("user_id", "name", "bio") VALUES (?1, ?2, ?3) ON CONFLICT ("user_id") DO UPDATE SET name = EXCLUDED.name, bio = EXCLUDED.bio;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_DoUpdateSet(t *testing.T) {
-	t.Parallel()
-	got := (builder.SqlInsertBuilder{}).
-		Dialect(&dialect.PostgresDialect{}).
-		Into("users").
-		Columns("id", "name", "visits").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("id").
-		DoUpdateSet("name", "excluded.name").
-		DoUpdateSet("visits", syntax.Raw(`"users"."visits" + 1`)).
-		DoUpdateSet("note", syntax.P(4)).
-		ToSql()
-	want := `INSERT INTO "users" ("id", "name", "visits") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "visits" = "users"."visits" + 1, "note" = $4;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_DoUpdateSet_MixedWithDoUpdate(t *testing.T) {
-	t.Parallel()
-	got := (builder.SqlInsertBuilder{}).
-		Dialect(&dialect.PostgresDialect{}).
-		Into("users").
-		Columns("id", "name", "bio").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("id").
-		DoUpdateSet("name", "excluded.name").
-		DoUpdate(`"bio" = excluded."bio"`).
-		DoUpdateWhere(syntax.Ne("users.name", "excluded.name")).
-		ToSql()
-	want := `INSERT INTO "users" ("id", "name", "bio") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "bio" = excluded."bio" WHERE "users"."name" <> "excluded"."name";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_DoUpdate_Appends(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("profiles").
-		Columns("user_id", "name", "bio").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("user_id").
-		DoUpdate("name = EXCLUDED.name").
-		DoUpdate("bio = EXCLUDED.bio").
-		ToSql()
-	want := `INSERT INTO "profiles" ("user_id", "name", "bio") VALUES (?1, ?2, ?3) ON CONFLICT ("user_id") DO UPDATE SET name = EXCLUDED.name, bio = EXCLUDED.bio;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_DoUpdateSet_DoesNotShareState(t *testing.T) {
-	t.Parallel()
-	base := (builder.SqlInsertBuilder{}).
-		Dialect(&dialect.PostgresDialect{}).
-		Into("users").
-		Columns("id", "name").
 		Values(syntax.P(1), syntax.P(2)).
-		OnConflict("id").
-		DoUpdateSet("name", "excluded.name")
-	a := base.DoUpdateSet("a", 1).ToSql()
-	b := base.DoUpdateSet("b", 2).ToSql()
-	wantA := `INSERT INTO "users" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "a" = 1;`
-	wantB := `INSERT INTO "users" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "b" = 2;`
-	if a != wantA {
-		t.Errorf("a: got %q; want %q", a, wantA)
-	}
-	if b != wantB {
-		t.Errorf("b: got %q; want %q", b, wantB)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictDoNothing_WithReturning(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("tags").
-		Columns("name").
-		Values(syntax.P(1)).
-		OnConflictDoNothing().
-		Returning("id").
-		ToSql()
-	want := `INSERT INTO "tags" ("name") VALUES (?1) ON CONFLICT DO NOTHING RETURNING "id";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_DoUpdateWhere(t *testing.T) {
-	t.Parallel()
-	// PostgresDialect splits dotted names, so the qualified columns render as "users"."version".
-	got := (builder.SqlInsertBuilder{}).
-		Dialect(&dialect.PostgresDialect{}).
-		Into("users").
-		Columns("id", "name", "version").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("id").
-		DoUpdate(`"name" = excluded."name"`).
-		DoUpdateWhere(syntax.Lt("users.version", "excluded.version")).
-		Returning("id").
-		ToSql()
-	want := `INSERT INTO "users" ("id", "name", "version") VALUES ($1, $2, $3) ` +
-		`ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name" ` +
-		`WHERE "users"."version" < "excluded"."version" RETURNING "id";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_DoUpdateWhere_WithParameter(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("id", "name").
-		Values(syntax.P(1), syntax.P(2)).
-		OnConflict("id").
-		DoUpdate(`"name" = excluded."name"`).
-		DoUpdateWhere(syntax.Ne("name", syntax.P(3))).
-		ToSql()
-	want := `INSERT INTO "users" ("id", "name") VALUES (?1, ?2) ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name" WHERE "name" <> ?3;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictWhere_DoUpdate(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("email", "name").
-		Values(syntax.P(1), syntax.P(2)).
-		OnConflict("email").
-		OnConflictWhere(syntax.Eq("active", 1)).
-		DoUpdate(`"name" = excluded."name"`).
-		ToSql()
-	want := `INSERT INTO "users" ("email", "name") VALUES (?1, ?2) ` +
-		`ON CONFLICT ("email") WHERE "active" = 1 DO UPDATE SET "name" = excluded."name";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictWhere_DoNothing(t *testing.T) {
-	t.Parallel()
-	got := newInsertBuilder().
-		Into("users").
-		Columns("email").
-		Values(syntax.P(1)).
-		OnConflict("email").
-		OnConflictWhere(syntax.Eq("active", 1)).
-		OnConflictDoNothing().
-		ToSql()
-	want := `INSERT INTO "users" ("email") VALUES (?1) ON CONFLICT ("email") WHERE "active" = 1 DO NOTHING;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictWhere_WithDoUpdateWhere(t *testing.T) {
-	t.Parallel()
-	got := (builder.SqlInsertBuilder{}).
-		Dialect(&dialect.PostgresDialect{}).
-		Into("users").
-		Columns("email", "name", "version").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("email").
-		OnConflictWhere(syntax.Eq("active", 1)).
-		DoUpdate(`"name" = excluded."name"`).
-		DoUpdateWhere(syntax.Lt("users.version", "excluded.version")).
-		ToSql()
-	want := `INSERT INTO "users" ("email", "name", "version") VALUES ($1, $2, $3) ` +
-		`ON CONFLICT ("email") WHERE "active" = 1 ` +
-		`DO UPDATE SET "name" = excluded."name" ` +
-		`WHERE "users"."version" < "excluded"."version";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnConflictWhere_WithoutTarget(t *testing.T) {
-	t.Parallel()
-	// An index predicate is meaningless without target columns, so it is not rendered.
-	got := newInsertBuilder().
-		Into("users").
-		Columns("email").
-		Values(syntax.P(1)).
-		OnConflictWhere(syntax.Eq("active", 1)).
-		OnConflictDoNothing().
-		ToSql()
-	want := `INSERT INTO "users" ("email") VALUES (?1) ON CONFLICT DO NOTHING;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnDuplicateKeyUpdate(t *testing.T) {
-	t.Parallel()
-	got := (&builder.SqlInsertBuilder{}).
-		Dialect(&dialect.MysqlDialect{}).
-		Into("tags").
 		Columns("name", "count").
-		Values(syntax.P(1), syntax.P(2)).
-		OnDuplicateKeyUpdate("count = VALUES(count)").
-		ToSql()
-	want := "INSERT INTO `tags` (`name`, `count`) VALUES (?, ?) ON DUPLICATE KEY UPDATE count = VALUES(count);"
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OnDuplicateKeyUpdateSet(t *testing.T) {
-	t.Parallel()
-	got := (&builder.SqlInsertBuilder{}).
-		Dialect(&dialect.MysqlDialect{}).
 		Into("tags").
-		Columns("name", "count").
-		Values(syntax.P(1), syntax.P(2)).
-		OnDuplicateKeyUpdateSet("count", syntax.Fn("VALUES", "count")).
-		OnDuplicateKeyUpdate("`updated_at` = NOW()").
-		ToSql()
-	want := "INSERT INTO `tags` (`name`, `count`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `count` = VALUES(`count`), `updated_at` = NOW();"
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_MySQLReturning(t *testing.T) {
-	t.Parallel()
-	// RETURNING is output as-is regardless of dialect; the DB handles any errors.
-	got := (&builder.SqlInsertBuilder{}).
-		Dialect(&dialect.MysqlDialect{}).
-		Into("users").
-		Columns("name").
-		Values(syntax.P(1)).
-		Returning("id").
-		ToSql()
-	want := "INSERT INTO `users` (`name`) VALUES (?) RETURNING `id`;"
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OrReplace(t *testing.T) {
-	t.Parallel()
-	got := (&builder.SqlInsertBuilder{}).
-		Dialect(&dialect.SqliteDialect{}).
-		Into("users").
-		Columns("id", "name").
-		Values(syntax.P(1), syntax.P(2)).
-		OrReplace().
-		ToSql()
-	want := `INSERT OR REPLACE INTO "users" ("id", "name") VALUES (?1, ?2);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlInsertBuilder_OrIgnore(t *testing.T) {
-	t.Parallel()
-	got := (&builder.SqlInsertBuilder{}).
-		Dialect(&dialect.SqliteDialect{}).
-		Into("tags").
-		Columns("name").
-		Values(syntax.P(1)).
 		OrIgnore().
 		ToSql()
-	want := `INSERT OR IGNORE INTO "tags" ("name") VALUES (?1);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
+
+	sqltesting.AssertSQL(t, got, `
+		INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2)
+		ON CONFLICT ("name") WHERE "active" = TRUE DO UPDATE SET "count" = 1 WHERE "count" > 0
+		ON DUPLICATE KEY UPDATE "count" = 0
+		RETURNING "id";`)
 }
 
-func TestSqlInsertBuilder_SQLiteReturning(t *testing.T) {
+// TestSqlInsertBuilder_BranchIsolation checks that deriving two statements from
+// a shared base does not leak appended rows or assignments between them.
+// The base holds three items per list so that a backing array with spare
+// capacity would be shared if a method appended in place.
+func TestSqlInsertBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
-	got := (&builder.SqlInsertBuilder{}).
-		Dialect(&dialect.SqliteDialect{}).
-		Into("users").
-		Columns("name").
-		Values(syntax.P(1)).
-		Returning("id").
-		ToSql()
-	want := `INSERT INTO "users" ("name") VALUES (?1) RETURNING "id";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
+	base := newInsert().Into("t").
+		Values(1).Values(2).Values(3).
+		DoUpdateSet("a", 1).DoUpdate(`"b" = 2`).DoUpdateSet("c", 3).
+		OnDuplicateKeyUpdateSet("a", 1).OnDuplicateKeyUpdate(`"b" = 2`).OnDuplicateKeyUpdateSet("c", 3)
 
-func TestSqlInsertBuilder_OrReplace_AnyDialect(t *testing.T) {
-	t.Parallel()
-	// sqbl does not validate dialect support: OR REPLACE is rendered whenever requested.
-	got := newInsertBuilder().
-		Into("users").
-		Columns("id", "name").
-		Values(syntax.P(1), syntax.P(2)).
-		OrReplace().
-		ToSql()
-	want := `INSERT OR REPLACE INTO "users" ("id", "name") VALUES (?1, ?2);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
+	left := base.Values(4).DoUpdateSet("l", 4).OnDuplicateKeyUpdate(`"l" = 4`)
+	right := base.Values(5).DoUpdate(`"r" = 5`).OnDuplicateKeyUpdateSet("r", 5)
 
-// Custom dialects that embed a built-in dialect must render the same clauses.
-type (
-	embeddedSqlite struct{ dialect.SqliteDialect }
-	embeddedMysql  struct{ dialect.MysqlDialect }
-)
-
-func TestSqlInsertBuilder_CustomDialect(t *testing.T) {
-	t.Parallel()
-	b := (builder.SqlInsertBuilder{}).Into("t").Columns("a").Values(1)
-
-	tests := []struct {
-		name  string
-		b     builder.SqlInsertBuilder
-		embed dialect.SqlDialect
-		base  dialect.SqlDialect
-	}{
-		{name: "OrIgnore", b: b.OrIgnore(), embed: &embeddedSqlite{}, base: &dialect.SqliteDialect{}},
-		{name: "OnDuplicateKeyUpdate", b: b.OnDuplicateKeyUpdate("a = a + 1"), embed: &embeddedMysql{}, base: &dialect.MysqlDialect{}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.b.ToSqlWithDialect(tt.embed)
-			want := tt.b.ToSqlWithDialect(tt.base)
-			if got != want {
-				t.Errorf("custom dialect = %q; built-in = %q", got, want)
-			}
-		})
-	}
+	sqltesting.AssertSQL(t, base.ToSql(), `
+		INSERT INTO "t" VALUES (1), (2), (3)
+		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3
+		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3;`)
+	sqltesting.AssertSQL(t, left.ToSql(), `
+		INSERT INTO "t" VALUES (1), (2), (3), (4)
+		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "l" = 4
+		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
+	sqltesting.AssertSQL(t, right.ToSql(), `
+		INSERT INTO "t" VALUES (1), (2), (3), (5)
+		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "r" = 5
+		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
 }

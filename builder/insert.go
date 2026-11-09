@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
@@ -188,7 +189,7 @@ func (b SqlInsertBuilder) Into(table string) SqlInsertBuilder {
 //
 //	b.Columns("name", "email")
 func (b SqlInsertBuilder) Columns(cols ...string) SqlInsertBuilder {
-	b.columns = cols
+	b.columns = slices.Clone(cols)
 	return b
 }
 
@@ -199,7 +200,7 @@ func (b SqlInsertBuilder) Columns(cols ...string) SqlInsertBuilder {
 //	b.Values(sqbl.P(1), sqbl.P(2))
 //	b.Values(sqbl.P(1), sqbl.P(2)).Values(sqbl.P(3), sqbl.P(4))
 func (b SqlInsertBuilder) Values(vals ...any) SqlInsertBuilder {
-	b.rows = append(append([]syntax.ValueRow(nil), b.rows...), syntax.ValueRow(vals))
+	b.rows = append(append([]syntax.ValueRow(nil), b.rows...), syntax.ValueRow(slices.Clone(vals)))
 	return b
 }
 
@@ -219,7 +220,7 @@ func (b SqlInsertBuilder) OnConflictDoNothing() SqlInsertBuilder {
 //	    Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
 //	    OnConflict("user_id", "key").DoUpdateSet("value", "excluded.value")
 func (b SqlInsertBuilder) OnConflict(cols ...string) SqlInsertBuilder {
-	b.conflictTarget = cols
+	b.conflictTarget = slices.Clone(cols)
 	return b
 }
 
@@ -351,6 +352,6 @@ func (b SqlInsertBuilder) OrRollback() SqlInsertBuilder {
 //
 //	sqblpg.InsertInto("users").Columns("name").Values(sqbl.P(1)).Returning("id", "created_at")
 func (b SqlInsertBuilder) Returning(cols ...string) SqlInsertBuilder {
-	b.returning = cols
+	b.returning = slices.Clone(cols)
 	return b
 }

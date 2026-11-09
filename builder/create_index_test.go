@@ -3,158 +3,59 @@ package builder_test
 import (
 	"testing"
 
-	"github.com/kotofurumiya/sqbl/builder"
-	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqltesting"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newCreateIndexBuilder() builder.SqlCreateIndexBuilder {
-	return (builder.SqlCreateIndexBuilder{}).Dialect(&dialect.SimpleDialect{})
+func TestSqlCreateIndexBuilder_Clauses(t *testing.T) {
+	t.Parallel()
+	idx := newCreateIndex().Name("idx_users_email").On("users").Columns("email")
+
+	runSQLCases(t, []sqlCase{
+		{
+			name: "basic",
+			b:    idx,
+			want: `CREATE INDEX "idx_users_email" ON "users" ("email");`,
+		},
+		{
+			name: "unique if not exists",
+			b:    idx.Unique().IfNotExists(),
+			want: `CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
+		},
+		{
+			name: "columns accumulate across calls",
+			b:    idx.Columns("tenant_id", "created_at"),
+			want: `CREATE INDEX "idx_users_email" ON "users" ("email", "tenant_id", "created_at");`,
+		},
+		{
+			name: "using method is written verbatim",
+			b:    idx.Using("btree"),
+			want: `CREATE INDEX "idx_users_email" ON "users" USING btree ("email");`,
+		},
+		{
+			name: "partial index",
+			b:    idx.Where(syntax.IsNull("deleted_at")),
+			want: `CREATE INDEX "idx_users_email" ON "users" ("email") WHERE "deleted_at" IS NULL;`,
+		},
+		{
+			name: "all clauses",
+			b:    idx.Where(syntax.IsNull("deleted_at")).Using("hash").IfNotExists().Unique(),
+			want: `CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" USING hash ("email") WHERE "deleted_at" IS NULL;`,
+		},
+	})
 }
 
-func TestSqlCreateIndexBuilder_ImplementsSqlBuilder(t *testing.T) {
+// TestSqlCreateIndexBuilder_BranchIsolation checks that deriving two indexes
+// from a shared base does not leak columns between them. The base holds three
+// columns so that a backing array with spare capacity would be shared if
+// Columns appended in place.
+func TestSqlCreateIndexBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
-	var _ builder.SqlBuilder = newCreateIndexBuilder()
-}
+	base := newCreateIndex().Name("idx").On("t").Columns("a").Columns("b").Columns("c")
+	left := base.Columns("l")
+	right := base.Columns("r")
 
-func TestSqlCreateIndexBuilder_Basic(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_users_email").
-		On("users").
-		Columns("email").
-		ToSql()
-	want := `CREATE INDEX "idx_users_email" ON "users" ("email");`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_Unique(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_users_email").
-		On("users").
-		Columns("email").
-		Unique().
-		ToSql()
-	want := `CREATE UNIQUE INDEX "idx_users_email" ON "users" ("email");`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_IfNotExists(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_users_email").
-		On("users").
-		Columns("email").
-		IfNotExists().
-		ToSql()
-	want := `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_UniqueIfNotExists(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_users_email").
-		On("users").
-		Columns("email").
-		Unique().
-		IfNotExists().
-		ToSql()
-	want := `CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_MultipleColumns(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_users_name").
-		On("users").
-		Columns("last_name", "first_name").
-		ToSql()
-	want := `CREATE INDEX "idx_users_name" ON "users" ("last_name", "first_name");`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_Using(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_users_email_hash").
-		On("users").
-		Columns("email").
-		Using("hash").
-		ToSql()
-	want := `CREATE INDEX "idx_users_email_hash" ON "users" USING hash ("email");`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_Where(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_active_users").
-		On("users").
-		Columns("email").
-		Where(syntax.Eq("active", true)).
-		ToSql()
-	want := `CREATE INDEX "idx_active_users" ON "users" ("email") WHERE "active" = TRUE;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_WhereIsNull(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_non_deleted").
-		On("users").
-		Columns("email").
-		Where(syntax.IsNull("deleted_at")).
-		ToSql()
-	want := `CREATE INDEX "idx_non_deleted" ON "users" ("email") WHERE "deleted_at" IS NULL;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_AllOptions(t *testing.T) {
-	t.Parallel()
-	got := newCreateIndexBuilder().
-		Name("idx_active_users_email").
-		On("users").
-		Columns("email").
-		Unique().
-		IfNotExists().
-		Using("btree").
-		Where(syntax.Eq("active", true)).
-		ToSql()
-	want := `CREATE UNIQUE INDEX IF NOT EXISTS "idx_active_users_email" ON "users" USING btree ("email") WHERE "active" = TRUE;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateIndexBuilder_ToSqlWithDialectNoSemicolon(t *testing.T) {
-	t.Parallel()
-	d := &dialect.SimpleDialect{}
-	got := newCreateIndexBuilder().
-		Name("idx_users_email").
-		On("users").
-		Columns("email").
-		ToSqlWithDialect(d)
-	want := `CREATE INDEX "idx_users_email" ON "users" ("email")`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
+	sqltesting.AssertSQL(t, base.ToSql(), `CREATE INDEX "idx" ON "t" ("a", "b", "c");`)
+	sqltesting.AssertSQL(t, left.ToSql(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "l");`)
+	sqltesting.AssertSQL(t, right.ToSql(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "r");`)
 }

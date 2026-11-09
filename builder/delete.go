@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
@@ -97,6 +98,6 @@ func (b SqlDeleteBuilder) Where(expr syntax.SqlFragment) SqlDeleteBuilder {
 //
 //	sqblpg.DeleteFrom("sessions").Where(...).Returning("id", "user_id")
 func (b SqlDeleteBuilder) Returning(cols ...string) SqlDeleteBuilder {
-	b.returning = cols
+	b.returning = slices.Clone(cols)
 	return b
 }

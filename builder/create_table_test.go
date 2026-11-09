@@ -3,248 +3,87 @@ package builder_test
 import (
 	"testing"
 
-	"github.com/kotofurumiya/sqbl/builder"
-	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqltesting"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func newCreateTableBuilder() builder.SqlCreateTableBuilder {
-	return (builder.SqlCreateTableBuilder{}).Dialect(&dialect.SimpleDialect{})
-}
-
-func TestSqlCreateTableBuilder_ImplementsSqlBuilder(t *testing.T) {
+func TestSqlCreateTableBuilder_Clauses(t *testing.T) {
 	t.Parallel()
-	var _ builder.SqlBuilder = newCreateTableBuilder()
-}
+	users := newCreateTable().Table("users").Column("id", "BIGINT")
 
-func TestSqlCreateTableBuilder_Basic(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("users").ToSql()
-	want := `CREATE TABLE "users" ();`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_SingleColumn(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("users").
-		Column("id", "BIGINT").
-		ToSql()
-	want := `CREATE TABLE "users" ("id" BIGINT);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_MultipleColumns(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("users").
-		Column("id", "BIGINT", "NOT NULL").
-		Column("name", "TEXT", "NOT NULL").
-		Column("email", "TEXT").
-		ToSql()
-	want := `CREATE TABLE "users" ("id" BIGINT NOT NULL, "name" TEXT NOT NULL, "email" TEXT);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_ColumnMultipleConstraints(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("t").
-		Column("score", "INTEGER", "NOT NULL", "DEFAULT 0").
-		ToSql()
-	want := `CREATE TABLE "t" ("score" INTEGER NOT NULL DEFAULT 0);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_IfNotExists(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("users").IfNotExists().
-		Column("id", "BIGINT", "NOT NULL").
-		ToSql()
-	want := `CREATE TABLE IF NOT EXISTS "users" ("id" BIGINT NOT NULL);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_PrimaryKey(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("users").
-		Column("id", "BIGINT", "NOT NULL").
-		Column("name", "TEXT", "NOT NULL").
-		PrimaryKey("id").
-		ToSql()
-	want := `CREATE TABLE "users" ("id" BIGINT NOT NULL, "name" TEXT NOT NULL, PRIMARY KEY ("id"));`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_CompositePrimaryKey(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("order_items").
-		Column("order_id", "BIGINT", "NOT NULL").
-		Column("item_id", "BIGINT", "NOT NULL").
-		PrimaryKey("order_id", "item_id").
-		ToSql()
-	want := `CREATE TABLE "order_items" ("order_id" BIGINT NOT NULL, "item_id" BIGINT NOT NULL, PRIMARY KEY ("order_id", "item_id"));`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_Unique(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("users").
-		Column("id", "BIGINT", "NOT NULL").
-		Column("email", "TEXT", "NOT NULL").
-		PrimaryKey("id").
-		Unique("email").
-		ToSql()
-	want := `CREATE TABLE "users" ("id" BIGINT NOT NULL, "email" TEXT NOT NULL, PRIMARY KEY ("id"), UNIQUE ("email"));`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_ForeignKey(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("orders").
-		Column("id", "BIGINT", "NOT NULL").
-		Column("user_id", "BIGINT", "NOT NULL").
-		PrimaryKey("id").
-		ForeignKey([]string{"user_id"}, "users", []string{"id"}).
-		ToSql()
-	want := `CREATE TABLE "orders" ("id" BIGINT NOT NULL, "user_id" BIGINT NOT NULL, PRIMARY KEY ("id"), FOREIGN KEY ("user_id") REFERENCES "users" ("id"));`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_ForeignKeyWithActions(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("orders").
-		Column("user_id", "BIGINT", "NOT NULL").
-		ForeignKey([]string{"user_id"}, "users", []string{"id"}, "ON DELETE CASCADE", "ON UPDATE RESTRICT").
-		ToSql()
-	want := `CREATE TABLE "orders" ("user_id" BIGINT NOT NULL, FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE RESTRICT);`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_CompositeForeignKey(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("order_items").
-		Column("order_id", "BIGINT", "NOT NULL").
-		Column("product_id", "BIGINT", "NOT NULL").
-		ForeignKey([]string{"order_id", "product_id"}, "orders", []string{"id", "product_id"}).
-		ToSql()
-	want := `CREATE TABLE "order_items" ("order_id" BIGINT NOT NULL, "product_id" BIGINT NOT NULL, FOREIGN KEY ("order_id", "product_id") REFERENCES "orders" ("id", "product_id"));`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_Check(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("products").
-		Column("id", "BIGINT", "NOT NULL").
-		Column("price", "INTEGER", "NOT NULL").
-		Check(syntax.Gt("price", 0)).
-		ToSql()
-	want := `CREATE TABLE "products" ("id" BIGINT NOT NULL, "price" INTEGER NOT NULL, CHECK ("price" > 0));`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_MultipleConstraints(t *testing.T) {
-	t.Parallel()
-	got := newCreateTableBuilder().Table("orders").
-		Column("id", "BIGINT", "NOT NULL").
-		Column("user_id", "BIGINT", "NOT NULL").
-		Column("email", "TEXT", "NOT NULL").
-		Column("total", "INTEGER", "NOT NULL").
-		PrimaryKey("id").
-		Unique("email").
-		ForeignKey([]string{"user_id"}, "users", []string{"id"}, "ON DELETE CASCADE").
-		Check(syntax.Gte("total", 0)).
-		ToSql()
-	want := `CREATE TABLE "orders" ("id" BIGINT NOT NULL, "user_id" BIGINT NOT NULL, "email" TEXT NOT NULL, "total" INTEGER NOT NULL, PRIMARY KEY ("id"), UNIQUE ("email"), FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE, CHECK ("total" >= 0));`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_ToSqlWithDialectNoSemicolon(t *testing.T) {
-	t.Parallel()
-	d := &dialect.SimpleDialect{}
-	got := newCreateTableBuilder().Table("users").
-		Column("id", "BIGINT", "NOT NULL").
-		ToSqlWithDialect(d)
-	want := `CREATE TABLE "users" ("id" BIGINT NOT NULL)`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_ToSqlWithDialectUsesGivenDialect(t *testing.T) {
-	t.Parallel()
-	d := &dialect.PostgresDialect{}
-	got := newCreateTableBuilder().Table("users").
-		Column("id", "BIGINT", "NOT NULL").
-		ToSqlWithDialect(d)
-	want := `CREATE TABLE "users" ("id" BIGINT NOT NULL)`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlCreateTableBuilder_Options(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		b    builder.SqlCreateTableBuilder
-		want string
-	}{
+	runSQLCases(t, []sqlCase{
 		{
-			name: "single option",
-			b:    newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("STRICT, WITHOUT ROWID"),
-			want: `CREATE TABLE "users" ("id" BIGINT) STRICT, WITHOUT ROWID;`,
+			name: "columns with and without constraints",
+			b:    newCreateTable().Table("users").Column("id", "BIGINT", "NOT NULL", "DEFAULT 0").Column("bio", "TEXT"),
+			want: `CREATE TABLE "users" ("id" BIGINT NOT NULL DEFAULT 0, "bio" TEXT);`,
 		},
 		{
-			name: "options are separated by spaces",
-			b:    newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("WITH (fillfactor = 70)", "TABLESPACE fast"),
-			want: `CREATE TABLE "users" ("id" BIGINT) WITH (fillfactor = 70) TABLESPACE fast;`,
+			name: "if not exists",
+			b:    users.IfNotExists(),
+			want: `CREATE TABLE IF NOT EXISTS "users" ("id" BIGINT);`,
 		},
 		{
-			name: "repeated calls append",
-			b:    newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("ENGINE=InnoDB").Options("COMMENT='users'"),
-			want: `CREATE TABLE "users" ("id" BIGINT) ENGINE=InnoDB COMMENT='users';`,
+			name: "primary key and unique, single and composite",
+			b:    users.PrimaryKey("id").PrimaryKey("tenant_id", "id").Unique("email").Unique("tenant_id", "email"),
+			want: `
+				CREATE TABLE "users" ("id" BIGINT,
+				PRIMARY KEY ("id"), PRIMARY KEY ("tenant_id", "id"), UNIQUE ("email"), UNIQUE ("tenant_id", "email"));`,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.b.ToSql(); got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
-			}
-		})
-	}
+		{
+			name: "foreign keys with and without actions",
+			b: users.
+				ForeignKey([]string{"org_id"}, "orgs", []string{"id"}).
+				ForeignKey([]string{"tenant_id", "team_id"}, "auth.teams", []string{"tenant_id", "id"}, "ON DELETE CASCADE", "ON UPDATE RESTRICT"),
+			want: `
+				CREATE TABLE "users" ("id" BIGINT,
+				FOREIGN KEY ("org_id") REFERENCES "orgs" ("id"),
+				FOREIGN KEY ("tenant_id", "team_id") REFERENCES "auth"."teams" ("tenant_id", "id") ON DELETE CASCADE ON UPDATE RESTRICT);`,
+		},
+		{
+			name: "check",
+			b:    users.Check(syntax.Gt("id", 0)),
+			want: `CREATE TABLE "users" ("id" BIGINT, CHECK ("id" > 0));`,
+		},
+		{
+			// Column definitions must precede table constraints in SQL,
+			// so they are grouped regardless of call order.
+			name: "table constraints follow all columns",
+			b:    newCreateTable().Table("users").PrimaryKey("id").Column("id", "BIGINT").Check(syntax.Gt("id", 0)).Column("bio", "TEXT"),
+			want: `CREATE TABLE "users" ("id" BIGINT, "bio" TEXT, PRIMARY KEY ("id"), CHECK ("id" > 0));`,
+		},
+		{
+			name: "constraints alone",
+			b:    newCreateTable().Table("users").PrimaryKey("id"),
+			want: `CREATE TABLE "users" (PRIMARY KEY ("id"));`,
+		},
+		{
+			name: "options are written verbatim and accumulate",
+			b:    users.Options("WITH (fillfactor = 70)", "TABLESPACE fast").Options("STRICT, WITHOUT ROWID"),
+			want: `CREATE TABLE "users" ("id" BIGINT) WITH (fillfactor = 70) TABLESPACE fast STRICT, WITHOUT ROWID;`,
+		},
+	})
 }
 
-func TestSqlCreateTableBuilder_OptionsDoNotShareState(t *testing.T) {
+// TestSqlCreateTableBuilder_BranchIsolation checks that deriving two statements
+// from a shared base does not leak columns, constraints, or options between them.
+// The base holds three items per list so that a backing array with spare
+// capacity would be shared if a method appended in place.
+func TestSqlCreateTableBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
-	base := newCreateTableBuilder().Table("users").Column("id", "BIGINT").Options("A")
-	_ = base.Options("B")
-	got := base.Options("C").ToSql()
-	want := `CREATE TABLE "users" ("id" BIGINT) A C;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
+	base := newCreateTable().Table("t").
+		Column("a", "INT").Column("b", "INT").Column("c", "INT").
+		Unique("a").Unique("b").Unique("c").
+		Options("A").Options("B").Options("C")
+
+	left := base.Column("l", "INT").PrimaryKey("l").Options("L")
+	right := base.Column("r", "INT").Check(syntax.Gt("r", 0)).Options("R")
+
+	sqltesting.AssertSQL(t, base.ToSql(), `
+		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c")) A B C;`)
+	sqltesting.AssertSQL(t, left.ToSql(), `
+		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, "l" INT,
+		UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c"), PRIMARY KEY ("l")) A B C L;`)
+	sqltesting.AssertSQL(t, right.ToSql(), `
+		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, "r" INT,
+		UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c"), CHECK ("r" > 0)) A B C R;`)
 }

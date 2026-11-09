@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
@@ -154,7 +155,7 @@ func (b SqlCreateTableBuilder) Options(opts ...string) SqlCreateTableBuilder {
 //	.Column("score", "INTEGER", "NOT NULL", "DEFAULT 0")
 //	.Column("note",  "TEXT")
 func (b SqlCreateTableBuilder) Column(name, typ string, constraints ...string) SqlCreateTableBuilder {
-	b.columns = append(append([]columnDef(nil), b.columns...), columnDef{Name: name, Typ: typ, Constraints: constraints})
+	b.columns = append(append([]columnDef(nil), b.columns...), columnDef{Name: name, Typ: typ, Constraints: slices.Clone(constraints)})
 	return b
 }
 
@@ -163,6 +164,7 @@ func (b SqlCreateTableBuilder) Column(name, typ string, constraints ...string) S
 //	.PrimaryKey("id")                  →  PRIMARY KEY ("id")
 //	.PrimaryKey("order_id", "item_id") →  PRIMARY KEY ("order_id", "item_id")
 func (b SqlCreateTableBuilder) PrimaryKey(cols ...string) SqlCreateTableBuilder {
+	cols = slices.Clone(cols)
 	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.SqlDialect) {
 		buf.WriteString("PRIMARY KEY (")
 		quoteIdentifiers(buf, d, cols)
@@ -176,6 +178,7 @@ func (b SqlCreateTableBuilder) PrimaryKey(cols ...string) SqlCreateTableBuilder 
 //	.Unique("email")          →  UNIQUE ("email")
 //	.Unique("first", "last")  →  UNIQUE ("first", "last")
 func (b SqlCreateTableBuilder) Unique(cols ...string) SqlCreateTableBuilder {
+	cols = slices.Clone(cols)
 	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.SqlDialect) {
 		buf.WriteString("UNIQUE (")
 		quoteIdentifiers(buf, d, cols)
@@ -193,6 +196,7 @@ func (b SqlCreateTableBuilder) Unique(cols ...string) SqlCreateTableBuilder {
 //	.ForeignKey([]string{"user_id"}, "users", []string{"id"}, "ON DELETE CASCADE", "ON UPDATE RESTRICT")
 //	  →  FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
 func (b SqlCreateTableBuilder) ForeignKey(cols []string, refTable string, refCols []string, onActions ...string) SqlCreateTableBuilder {
+	cols, refCols, onActions = slices.Clone(cols), slices.Clone(refCols), slices.Clone(onActions)
 	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.SqlDialect) {
 		buf.WriteString("FOREIGN KEY (")
 		quoteIdentifiers(buf, d, cols)

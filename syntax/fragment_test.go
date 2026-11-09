@@ -5,203 +5,151 @@ import (
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqltesting"
 )
 
-func TestIdent(t *testing.T) {
+// render renders f with PostgreSQL, the dialect used where dialect differences are not under test.
+func render(f SqlFragment) string {
+	var buf bytes.Buffer
+	f.AppendSQL(&buf, &dialect.PostgresDialect{})
+	return buf.String()
+}
+
+func TestDialectDependentFragments(t *testing.T) {
 	t.Parallel()
-	d := &dialect.PostgresDialect{}
 
 	tests := []struct {
-		name  string
-		input Ident
-		want  string
+		name                            string
+		fragment                        SqlFragment
+		postgres, mysql, sqlite, simple string
 	}{
-		{name: "column", input: "name", want: `"name"`},
-		{name: "qualified column", input: "u.id", want: `"u"."id"`},
-		{name: "identifier with space", input: "my column", want: `"my column"`},
-		// Text that looks like an expression is still a single identifier.
-		{name: "function-like text", input: "COUNT(*)", want: `"COUNT(*)"`},
-		{name: "literal-like text", input: "'value'", want: `"'value'"`},
-		{name: "embedded quote is escaped", input: `evil"col; DROP TABLE t; --`, want: `"evil""col; DROP TABLE t; --"`},
-		{name: "wildcard", input: "*", want: "*"},
-		{name: "qualified wildcard", input: "u.*", want: `"u".*`},
+		{"Ident", Ident("name"), `"name"`, "`name`", `"name"`, `"name"`},
+		{"Ident qualified", Ident("u.id"), `"u"."id"`, "`u`.`id`", `"u"."id"`, `"u.id"`},
+		{"Ident wildcard", Ident("*"), "*", "*", "*", "*"},
+		{"Ident qualified wildcard", Ident("u.*"), `"u".*`, "`u`.*", `"u".*`, `"u".*`},
+		{"bool true", ToFragment(true), "TRUE", "TRUE", "1", "TRUE"},
+		{"bool false", ToFragment(false), "FALSE", "FALSE", "0", "FALSE"},
+		{"P positional", P(), "?", "?", "?", "?"},
+		{"P indexed", P(2), "$2", "?", "?2", "?2"},
+		{"P named is written as-is", P(":status"), ":status", ":status", ":status", ":status"},
+		{"P with unsupported argument falls back to positional", P(3.14), "?", "?", "?", "?"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			tt.input.AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.want {
-				t.Errorf("Ident(%q) = %q; want %q", string(tt.input), got, tt.want)
+			t.Parallel()
+			for _, c := range []struct {
+				name string
+				d    dialect.SqlDialect
+				want string
+			}{
+				{"postgres", &dialect.PostgresDialect{}, tt.postgres},
+				{"mysql", &dialect.MysqlDialect{}, tt.mysql},
+				{"sqlite", &dialect.SqliteDialect{}, tt.sqlite},
+				{"simple", &dialect.SimpleDialect{}, tt.simple},
+			} {
+				var buf bytes.Buffer
+				tt.fragment.AppendSQL(&buf, c.d)
+				if got := buf.String(); got != c.want {
+					t.Errorf("%s: got %s; want %s", c.name, got, c.want)
+				}
 			}
 		})
 	}
 }
 
-func TestRaw(t *testing.T) {
+// TestToFragment checks how each Go type is interpreted where an expression is expected.
+// AppendValue must agree with ToFragment, so both are checked against the same expectation.
+func TestToFragment(t *testing.T) {
 	t.Parallel()
-	var buf bytes.Buffer
-	Raw(`"count" + 1`).AppendSQL(&buf, &dialect.PostgresDialect{})
-	if got, want := buf.String(), `"count" + 1`; got != want {
-		t.Errorf("Raw = %q; want %q", got, want)
-	}
-}
-
-func TestAppendValue(t *testing.T) {
-	t.Parallel()
-	d := &dialect.SqliteDialect{}
 
 	tests := []struct {
 		name  string
 		input any
 		want  string
 	}{
-		{name: "string is identifier", input: "users.id", want: `"users"."id"`},
-		{name: "Ident", input: Ident("name"), want: `"name"`},
-		{name: "Raw", input: Raw("NOW()"), want: "NOW()"},
-		{name: "Parameter", input: P(), want: "?"},
-		{name: "Fn", input: Fn("LOWER", "email"), want: `LOWER("email")`},
-		{name: "int", input: 42, want: "42"},
-		{name: "float", input: 1.5, want: "1.5"},
-		{name: "bool uses dialect", input: true, want: "1"},
-		{name: "nil is NULL", input: nil, want: "NULL"},
+		{"string is an identifier", "users.id", `"users"."id"`},
+		// Text that looks like SQL is still one identifier, which keeps strings injection-safe.
+		{"string never becomes SQL", `n + 1; DROP TABLE "t"`, `"n + 1; DROP TABLE ""t"""`},
+		{"string with a quote is escaped", `a"b`, `"a""b"`},
+		{"Ident", Ident("name"), `"name"`},
+		{"Raw is written as-is", Raw(`"count" + 1`), `"count" + 1`},
+		{"Parameter", P(1), "$1"},
+		{"other fragment", Fn("LOWER", "email"), `LOWER("email")`},
+		{"bool", true, "TRUE"},
+		{"nil is NULL", nil, "NULL"},
+		{"int", 42, "42"},
+		{"negative int64", int64(-7), "-7"},
+		{"float", 1.5, "1.5"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			AppendValue(&buf, d, tt.input)
-			if got := buf.String(); got != tt.want {
-				t.Errorf("AppendValue(%v) = %q; want %q", tt.input, got, tt.want)
-			}
+			t.Parallel()
+			sqltesting.AssertSQL(t, render(ToFragment(tt.input)), tt.want)
 
-			// ToFragment must render the same SQL as AppendValue.
-			buf.Reset()
-			ToFragment(tt.input).AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.want {
-				t.Errorf("ToFragment(%v) = %q; want %q", tt.input, got, tt.want)
-			}
+			var buf bytes.Buffer
+			AppendValue(&buf, &dialect.PostgresDialect{}, tt.input)
+			sqltesting.AssertSQL(t, buf.String(), tt.want)
 		})
 	}
 }
 
-func TestAliased(t *testing.T) {
+func TestAliasAndOrder(t *testing.T) {
 	t.Parallel()
-	d := &dialect.SimpleDialect{}
 
 	tests := []struct {
 		name     string
-		source   any
-		alias    string
-		expected string
+		fragment SqlFragment
+		want     string
 	}{
-		{
-			name:     "table alias",
-			source:   "users",
-			alias:    "u",
-			expected: `"users" AS "u"`,
-		},
-		{
-			name:     "expression alias",
-			source:   Fn("SUM", "amount"),
-			alias:    "total",
-			expected: `SUM("amount") AS "total"`,
-		},
+		{"As table", As("users", "u"), `"users" AS "u"`},
+		{"As qualified table", As("public.users", "u"), `"public"."users" AS "u"`},
+		{"As expression", As(Fn("SUM", "amount"), "total"), `SUM("amount") AS "total"`},
+		// The alias is a single name, so a dot is not a qualifier there.
+		{"As alias is not split on dots", As("users", "u.x"), `"users" AS "u.x"`},
+		{"As alias is escaped", As("users", `u"`), `"users" AS "u"""`},
+		{"AsColumns one column", AsColumns(Fn("unnest", P(1)), "ids", "id"), `unnest($1) AS "ids" ("id")`},
+		{"AsColumns many columns", AsColumns(Fn("unnest", P(1), P(2)), "pairs", "id", "name"), `unnest($1, $2) AS "pairs" ("id", "name")`},
+		{"AsColumns without columns", AsColumns("users", "u"), `"users" AS "u"`},
+		{"Asc", Asc("name"), `"name" ASC`},
+		{"Desc qualified", Desc("u.created_at"), `"u"."created_at" DESC`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// t.Parallel()
-			var buf bytes.Buffer
-			As(tt.source, tt.alias).AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.expected {
-				t.Errorf("As(%v, %q).AppendSQL() = %q; want %q", tt.source, tt.alias, got, tt.expected)
-			}
+			t.Parallel()
+			sqltesting.AssertSQL(t, render(tt.fragment), tt.want)
 		})
 	}
 }
 
-func TestAsColumns(t *testing.T) {
+// TestCopiesCallerSlices checks that fragments keep their own copy of slices
+// passed to variadic constructors, so reusing a slice cannot rewrite them.
+func TestCopiesCallerSlices(t *testing.T) {
 	t.Parallel()
-	d := &dialect.PostgresDialect{}
+	names := []string{"a", "b"}
+	args := []any{"a", "b"}
+	exprs := []SqlFragment{Raw("x"), Raw("y")}
 
 	tests := []struct {
 		name     string
-		alias    Aliased
-		expected string
+		fragment SqlFragment
+		want     string
 	}{
-		{
-			name:     "single column",
-			alias:    AsColumns(Fn("unnest", P(1)), "ids", "id"),
-			expected: `unnest($1) AS "ids" ("id")`,
-		},
-		{
-			name:     "multiple columns",
-			alias:    AsColumns(Fn("unnest", P(1), P(2)), "pairs", "id", "name"),
-			expected: `unnest($1, $2) AS "pairs" ("id", "name")`,
-		},
-		{
-			name:     "no columns",
-			alias:    AsColumns("users", "u"),
-			expected: `"users" AS "u"`,
-		},
+		{"AsColumns", AsColumns("t", "s", names...), `"t" AS "s" ("a", "b")`},
+		{"Fn", Fn("f", args...), `f("a", "b")`},
+		{"And", And(exprs...), `x AND y`},
+		{"Or", Or(exprs...), `x OR y`},
+		{"In", In("c", args...), `"c" IN ("a", "b")`},
+		{"NotIn", NotIn("c", args...), `"c" NOT IN ("a", "b")`},
+		{"window", Over(Fn("f")).PartitionBy(names...).OrderBy(args...), `f() OVER (PARTITION BY "a", "b" ORDER BY "a", "b")`},
 	}
-
+	names[0], args[0], exprs[0] = "z", "z", Raw("z")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			tt.alias.AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.expected {
-				t.Errorf("AppendSQL() = %q; want %q", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestAsColumns_CopiesColumns(t *testing.T) {
-	t.Parallel()
-	d := &dialect.PostgresDialect{}
-
-	cols := []string{"id"}
-	a := AsColumns(Fn("unnest", P(1)), "ids", cols...)
-	cols[0] = "changed"
-
-	var buf bytes.Buffer
-	a.AppendSQL(&buf, d)
-	if got, want := buf.String(), `unnest($1) AS "ids" ("id")`; got != want {
-		t.Errorf("AppendSQL() = %q; want %q", got, want)
-	}
-}
-
-func TestOrder(t *testing.T) {
-	t.Parallel()
-	d := &dialect.SimpleDialect{}
-
-	tests := []struct {
-		name     string
-		order    Order
-		expected string
-	}{
-		{
-			name:     "Asc",
-			order:    Asc("name"),
-			expected: `"name" ASC`,
-		},
-		{
-			name:     "Desc",
-			order:    Desc("created_at"),
-			expected: `"created_at" DESC`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// t.Parallel()
-			var buf bytes.Buffer
-			tt.order.AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.expected {
-				t.Errorf("Order.AppendSQL() = %q; want %q", got, tt.expected)
-			}
+			t.Parallel()
+			sqltesting.AssertSQL(t, render(tt.fragment), tt.want)
 		})
 	}
 }

@@ -79,11 +79,9 @@ func openDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// adapt wraps a *sql.DB as a shared.Conn.
-func adapt(db *sql.DB) shared.Conn { return &sqliteConn{db} }
+func openConn(t *testing.T) shared.Conn { return &sqliteConn{openDB(t)} }
 
-// defaultSuite wires the SQLite builder constructors into a shared.Suite.
-var defaultSuite = shared.Suite{
+var suite = shared.Suite{
 	From:        sqblsqlite.From,
 	InsertInto:  sqblsqlite.InsertInto,
 	Update:      sqblsqlite.Update,
@@ -93,336 +91,61 @@ var defaultSuite = shared.Suite{
 	DropTable:   sqblsqlite.DropTable,
 	DropIndex:   sqblsqlite.DropIndex,
 	AlterTable:  sqblsqlite.AlterTable,
+
+	PositionalParams: true,
+	IndexedParams:    true,
+	NamedParams:      true,
+	FullJoin:         true,
+	Returning:        true,
+	OnConflict:       true,
+	PartialIndex:     true,
 }
 
-func TestSQLite_CRUD(t *testing.T) {
+func TestShared(t *testing.T) {
 	t.Parallel()
-	db := openDB(t)
-	shared.RunCRUD(t, adapt(db), defaultSuite)
+	shared.RunAll(t, openConn, suite)
 }
 
-func TestSQLite_Injection_ValueAsParameter(t *testing.T) {
+// TestInsertOrConflict resolves a primary-key conflict with each SQLite
+// INSERT OR action.
+func TestInsertOrConflict(t *testing.T) {
 	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_ValueAsParameter(t, adapt(db), defaultSuite)
-}
+	conn := openConn(t)
+	shared.MustExec(t, conn, `CREATE TEMPORARY TABLE config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+	shared.MustExec(t, conn, `INSERT INTO config (key, value) VALUES ('theme', 'light')`)
 
-func TestSQLite_Injection_StoredValue(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_StoredValue(t, adapt(db), defaultSuite)
-}
+	insert := sqblsqlite.InsertInto("config").Columns("key", "value").Values(sqblsqlite.P(1), sqblsqlite.P(2))
+	value := sqblsqlite.From("config").Select("value").ToSql()
 
-func TestSQLite_Injection_LikeWildcardsInEqValue(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_LikeWildcardsInEqValue(t, adapt(db), defaultSuite)
-}
+	shared.MustExec(t, conn, insert.OrIgnore().ToSql(), "theme", "dark")
+	shared.AssertSlice(t, shared.QueryColumn[string](t, conn, value), []string{"light"})
 
-func TestSQLite_Injection_QuotedIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_QuotedIdentifier(t, adapt(db), defaultSuite)
-}
+	shared.MustExec(t, conn, insert.OrReplace().ToSql(), "theme", "dark")
+	shared.AssertSlice(t, shared.QueryColumn[string](t, conn, value), []string{"dark"})
 
-func TestSQLite_Injection_OrderByIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_OrderByIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Injection_TableNameIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_TableNameIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Injection_SelectColumnIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_SelectColumnIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Injection_AliasIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_AliasIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Injection_CommentBasedPayloads(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_CommentBasedPayloads(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Injection_StackedInsertPayload(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_StackedInsertPayload(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_JoinWithAliases(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunJoinWithAliases(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Subquery(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunSubquery(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_SetOperations(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunSetOperations(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_CTEAndAggregation(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCTEAndAggregation(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Identifiers_ReservedKeywords(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunIdentifiers_ReservedKeywords(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Identifiers_MixedCase(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunIdentifiers_MixedCase(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Identifiers_EmbeddedDoubleQuote(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunIdentifiers_EmbeddedDoubleQuote(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_CreateTable(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_CreateTable_UniqueConstraint(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable_UniqueConstraint(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_CreateTable_ForeignKey(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable_ForeignKey(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_CreateTable_Check(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable_Check(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_CreateIndex(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateIndex(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_CreateIndex_Partial(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateIndex_Partial(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Upsert_DoUpdateWhere(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunUpsert_DoUpdateWhere(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_Upsert_OnConflictWhere(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunUpsert_OnConflictWhere(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_FilteringAndPagination(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunFilteringAndPagination(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_RecursiveCTE(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunRecursiveCTE(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_SchemaEvolution(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunSchemaEvolution(t, adapt(db), defaultSuite)
-}
-
-func TestSQLite_ReturningAndOrConflict(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	ctx := context.Background()
-	a := adapt(db)
-
-	if err := a.Exec(ctx, `
-		CREATE TEMPORARY TABLE config (
-			key   TEXT NOT NULL PRIMARY KEY,
-			value TEXT NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create table: %v", err)
+	for _, failing := range []string{
+		insert.OrAbort().ToSql(),
+		insert.OrFail().ToSql(),
+		insert.OrRollback().ToSql(),
+	} {
+		shared.MustFail(t, conn, "duplicate key", failing, "theme", "blue")
 	}
-
-	// Seed an initial row.
-	if err := a.Exec(ctx,
-		defaultSuite.InsertInto("config").
-			Columns("key", "value").
-			Values(sqblsqlite.P(1), sqblsqlite.P(2)).
-			ToSql(),
-		"theme", "light",
-	); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	// INSERT OR IGNORE: existing key must not overwrite the existing value.
-	if err := a.Exec(ctx,
-		defaultSuite.InsertInto("config").
-			Columns("key", "value").
-			Values(sqblsqlite.P(1), sqblsqlite.P(2)).
-			OrIgnore().
-			ToSql(),
-		"theme", "dark",
-	); err != nil {
-		t.Fatalf("or ignore: %v", err)
-	}
-	var val string
-	if err := a.QueryRow(ctx,
-		defaultSuite.From("config").Select("value").Where(sqblsqlite.Eq("key", sqblsqlite.P(1))).ToSql(),
-		"theme",
-	).Scan(&val); err != nil {
-		t.Fatalf("select after ignore: %v", err)
-	}
-	if val != "light" {
-		t.Errorf("OR IGNORE: value = %q; want %q", val, "light")
-	}
-
-	// INSERT OR REPLACE: existing key must be replaced with the new value.
-	if err := a.Exec(ctx,
-		defaultSuite.InsertInto("config").
-			Columns("key", "value").
-			Values(sqblsqlite.P(1), sqblsqlite.P(2)).
-			OrReplace().
-			ToSql(),
-		"theme", "dark",
-	); err != nil {
-		t.Fatalf("or replace: %v", err)
-	}
-	if err := a.QueryRow(ctx,
-		defaultSuite.From("config").Select("value").Where(sqblsqlite.Eq("key", sqblsqlite.P(1))).ToSql(),
-		"theme",
-	).Scan(&val); err != nil {
-		t.Fatalf("select after replace: %v", err)
-	}
-	if val != "dark" {
-		t.Errorf("OR REPLACE: value = %q; want %q", val, "dark")
-	}
-
-	// INSERT ... RETURNING key, value — new row, get the inserted values back.
-	var retKey, retVal string
-	if err := a.QueryRow(ctx,
-		defaultSuite.InsertInto("config").
-			Columns("key", "value").
-			Values(sqblsqlite.P(1), sqblsqlite.P(2)).
-			Returning("key", "value").
-			ToSql(),
-		"lang", "go",
-	).Scan(&retKey, &retVal); err != nil {
-		t.Fatalf("insert returning: %v", err)
-	}
-	if retKey != "lang" || retVal != "go" {
-		t.Errorf("RETURNING: got (%q, %q); want (%q, %q)", retKey, retVal, "lang", "go")
-	}
+	shared.AssertSlice(t, shared.QueryColumn[string](t, conn, value), []string{"dark"})
 }
 
-func TestSQLite_IndexedParameters(t *testing.T) {
+// TestCreateTableOptions applies table options after the column list.
+// STRICT makes SQLite reject values that do not match the declared type.
+func TestCreateTableOptions(t *testing.T) {
 	t.Parallel()
-	db := openDB(t)
-	ctx := context.Background()
-	a := adapt(db)
-
-	if err := a.Exec(ctx, `
-		CREATE TEMPORARY TABLE users (
-			id         INTEGER NOT NULL PRIMARY KEY,
-			name       TEXT    NOT NULL,
-			created_at TEXT    NOT NULL,
-			updated_at TEXT    NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	// The same index appears twice, and indexes appear out of order.
-	if err := a.Exec(ctx,
-		defaultSuite.InsertInto("users").
-			Columns("id", "name", "created_at", "updated_at").
-			Values(sqblsqlite.P(3), sqblsqlite.P(2), sqblsqlite.P(1), sqblsqlite.P(1)).
-			ToSql(),
-		"2026-01-01", "alice", 1,
-	); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-
-	var id int
-	var name, createdAt, updatedAt string
-	if err := a.QueryRow(ctx,
-		defaultSuite.From("users").Select("id", "name", "created_at", "updated_at").ToSql(),
-	).Scan(&id, &name, &createdAt, &updatedAt); err != nil {
-		t.Fatalf("select: %v", err)
-	}
-	if id != 1 || name != "alice" || createdAt != "2026-01-01" || updatedAt != "2026-01-01" {
-		t.Errorf("got (%d, %q, %q, %q); want (1, %q, %q, %q)",
-			id, name, createdAt, updatedAt, "alice", "2026-01-01", "2026-01-01")
-	}
-}
-
-func TestSQLite_CreateTable_Strict(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	ctx := context.Background()
-	a := adapt(db)
-
-	if err := a.Exec(ctx,
-		defaultSuite.CreateTable("counters").
+	conn := openConn(t)
+	shared.MustExec(t, conn,
+		sqblsqlite.CreateTable("counters").
 			Column("id", "INTEGER", "PRIMARY KEY").
 			Column("hits", "INTEGER", "NOT NULL").
 			Options("STRICT, WITHOUT ROWID").
-			ToSql(),
-	); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := a.Exec(ctx, defaultSuite.DropTable("counters").ToSql()); err != nil {
-			t.Errorf("drop table: %v", err)
-		}
-	})
+			ToSql())
 
-	// A STRICT table rejects a value that does not match the column type.
-	err := a.Exec(ctx,
-		defaultSuite.InsertInto("counters").Columns("id", "hits").Values(sqblsqlite.P(1), sqblsqlite.P(2)).ToSql(),
-		1, "many",
-	)
-	if err == nil {
-		t.Fatal("insert of TEXT into a STRICT INTEGER column succeeded; want an error")
-	}
+	insert := sqblsqlite.InsertInto("counters").Columns("id", "hits").Values(sqblsqlite.P(1), sqblsqlite.P(2)).ToSql()
+	shared.MustExec(t, conn, insert, 1, 10)
+	shared.MustFail(t, conn, "TEXT into a STRICT INTEGER column", insert, 2, "many")
 }

@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bytes"
+	"slices"
 	"strconv"
 
 	"github.com/kotofurumiya/sqbl/dialect"
@@ -52,7 +53,7 @@ type SqlSelectBuilder struct {
 	setOps     []setOpClause        // UNION, INTERSECT, EXCEPT (and ALL variants)
 }
 
-var _ syntax.SqlFragment = SqlSelectBuilder{}
+var _ syntax.Subquery = SqlSelectBuilder{}
 var _ SqlBuilder = SqlSelectBuilder{}
 
 // ToSql renders the query using the dialect set on this builder.
@@ -87,6 +88,9 @@ func (b SqlSelectBuilder) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	buf.WriteByte(')')
 }
 
+// IsSubquery implements syntax.Subquery, so IN (subquery) renders single parentheses.
+func (b SqlSelectBuilder) IsSubquery() {}
+
 // renderSQL writes the query (without trailing semicolon) into buf.
 // WriteString/Write calls append directly to the buffer, eliminating intermediate
 // string values and the []string slice that strings.Join would require.
@@ -107,7 +111,7 @@ func (b SqlSelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			if i > 0 {
 				buf.WriteString(", ")
 			}
-			buf.WriteString(c.Name)
+			d.Quote(buf, c.Name)
 			buf.WriteString(" AS (")
 			c.Builder.renderSQL(buf, d)
 			buf.WriteByte(')')
@@ -151,17 +155,17 @@ func (b SqlSelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 		b.from.AppendSQL(buf, d)
 	}
 
-	// JOIN clauses — each rendered as "KIND [LATERAL] JOIN table [ON cond]".
+	// JOIN clauses — each rendered as "KIND JOIN [LATERAL] table [ON cond]".
 	// CROSS JOIN has no ON clause; lateral joins use ON TRUE unless CROSS.
 	for _, j := range b.joins {
 		buf.WriteByte(' ')
 		switch {
 		case j.Lateral && j.Kind == "CROSS":
-			buf.WriteString("CROSS LATERAL JOIN ")
+			buf.WriteString("CROSS JOIN LATERAL ")
 			j.Table.AppendSQL(buf, d)
 		case j.Lateral:
 			buf.WriteString(j.Kind)
-			buf.WriteString(" LATERAL JOIN ")
+			buf.WriteString(" JOIN LATERAL ")
 			j.Table.AppendSQL(buf, d)
 			buf.WriteString(" ON TRUE")
 		case j.Kind == "CROSS":
@@ -315,7 +319,7 @@ func (b SqlSelectBuilder) Distinct() SqlSelectBuilder {
 //	sqblpg.From("orders").Select("user_id", "amount").DistinctOn("user_id").OrderBy(sqblpg.Desc("amount"))
 //	// SELECT DISTINCT ON ("user_id") "user_id", "amount" FROM "orders" ORDER BY "amount" DESC
 func (b SqlSelectBuilder) DistinctOn(cols ...string) SqlSelectBuilder {
-	b.distinctOn = cols
+	b.distinctOn = slices.Clone(cols)
 	return b
 }
 
@@ -478,10 +482,11 @@ func (b SqlSelectBuilder) CrossJoin(table any) SqlSelectBuilder {
 
 // With adds a Common Table Expression (CTE) to the query.
 // The CTE is rendered as a WITH clause before the main SELECT.
+// The name is quoted as a single identifier.
 //
 //	recent := sqblpg.From("orders").Where(sqblpg.Gte("created_at", "2025-01-01"))
 //	b.With("recent_orders", recent)
-//	// WITH recent_orders AS (SELECT ...) SELECT ...
+//	// WITH "recent_orders" AS (SELECT ...) SELECT ...
 func (b SqlSelectBuilder) With(name string, q SqlSelectBuilder) SqlSelectBuilder {
 	b.ctes = append(append([]cteClause(nil), b.ctes...), cteClause{Name: name, Builder: q})
 	return b
@@ -494,7 +499,7 @@ func (b SqlSelectBuilder) With(name string, q SqlSelectBuilder) SqlSelectBuilder
 //	base := sqblpg.From("employees").Select("id", "manager_id").Where(sqblpg.IsNull("manager_id"))
 //	recursive := sqblpg.From("employees").Join(sqblpg.As("org", "o"), sqblpg.Eq("employees.manager_id", "o.id")).Select("employees.id", "employees.manager_id")
 //	b.WithRecursive("org", base.Union(recursive))
-//	// WITH RECURSIVE org AS (...) SELECT ...
+//	// WITH RECURSIVE "org" AS (...) SELECT ...
 func (b SqlSelectBuilder) WithRecursive(name string, q SqlSelectBuilder) SqlSelectBuilder {
 	b.ctes = append(append([]cteClause(nil), b.ctes...), cteClause{Name: name, Builder: q, Recursive: true})
 	return b
@@ -508,7 +513,7 @@ func (b SqlSelectBuilder) WithRecursive(name string, q SqlSelectBuilder) SqlSele
 //	    sqblpg.From("orders").Select("amount").Where(sqblpg.Eq("user_id", "u.id")).Limit(1),
 //	    "latest",
 //	)
-//	// FROM "users" AS "u" LEFT LATERAL JOIN (SELECT ...) AS "latest" ON TRUE
+//	// FROM "users" AS "u" LEFT JOIN LATERAL (SELECT ...) AS "latest" ON TRUE
 func (b SqlSelectBuilder) LeftLateralJoin(subquery SqlSelectBuilder, alias string) SqlSelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:    "LEFT",
@@ -525,7 +530,7 @@ func (b SqlSelectBuilder) LeftLateralJoin(subquery SqlSelectBuilder, alias strin
 //	    sqblpg.From("orders").Select("amount").Where(sqblpg.Eq("user_id", "u.id")).Limit(1),
 //	    "latest",
 //	)
-//	// FROM "users" AS "u" CROSS LATERAL JOIN (SELECT ...) AS "latest"
+//	// FROM "users" AS "u" CROSS JOIN LATERAL (SELECT ...) AS "latest"
 func (b SqlSelectBuilder) CrossLateralJoin(subquery SqlSelectBuilder, alias string) SqlSelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:    "CROSS",

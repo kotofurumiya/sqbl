@@ -2,6 +2,7 @@ package syntax
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 )
@@ -104,7 +105,7 @@ func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 //	syntax.And(syntax.Eq("active", true), syntax.Gt("age", 18))
 //	// "active" = TRUE AND "age" > 18
 func And(exprs ...SqlFragment) LogicalExpr {
-	return LogicalExpr{Operator: "AND", Expressions: exprs}
+	return LogicalExpr{Operator: "AND", Expressions: slices.Clone(exprs)}
 }
 
 // Or combines multiple expressions with OR.
@@ -112,7 +113,7 @@ func And(exprs ...SqlFragment) LogicalExpr {
 //	syntax.Or(syntax.Eq("role", syntax.P(1)), syntax.Eq("role", syntax.P(2)))
 //	// "role" = $1 OR "role" = $2
 func Or(exprs ...SqlFragment) LogicalExpr {
-	return LogicalExpr{Operator: "OR", Expressions: exprs}
+	return LogicalExpr{Operator: "OR", Expressions: slices.Clone(exprs)}
 }
 
 // NotExpr represents a NOT (...) expression.
@@ -151,10 +152,17 @@ var _ SqlFragment = InExpr{}
 func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	AppendValue(buf, d, e.Left)
 	if e.Negate {
-		buf.WriteString(" NOT IN (")
+		buf.WriteString(" NOT IN ")
 	} else {
-		buf.WriteString(" IN (")
+		buf.WriteString(" IN ")
 	}
+	if len(e.Values) == 1 {
+		if sub, ok := e.Values[0].(Subquery); ok {
+			sub.AppendSQL(buf, d)
+			return
+		}
+	}
+	buf.WriteByte('(')
 	for i, v := range e.Values {
 		if i > 0 {
 			buf.WriteString(", ")
@@ -172,7 +180,7 @@ func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 //	syntax.In("id", subquery)
 //	// "id" IN (SELECT ...)
 func In(left any, values ...any) InExpr {
-	return InExpr{Left: left, Negate: false, Values: values}
+	return InExpr{Left: left, Negate: false, Values: slices.Clone(values)}
 }
 
 // NotIn returns a NOT IN expression.
@@ -180,7 +188,7 @@ func In(left any, values ...any) InExpr {
 //	syntax.NotIn("status", syntax.Raw("'deleted'"), syntax.Raw("'banned'"))
 //	// "status" NOT IN ('deleted', 'banned')
 func NotIn(left any, values ...any) InExpr {
-	return InExpr{Left: left, Negate: true, Values: values}
+	return InExpr{Left: left, Negate: true, Values: slices.Clone(values)}
 }
 
 // NullExpr represents an IS NULL or IS NOT NULL expression.
