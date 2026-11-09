@@ -64,6 +64,6 @@ func main() {
 		InnerJoin(sqbl.As("reps", "r"), sqbl.Eq("rk.rep_id", "r.id")).
 		Where(sqbl.Lte("rk.rank", 3)).
 		OrderBy(sqbl.Asc("rk.region"), sqbl.Asc("rk.rank")).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql)
 }

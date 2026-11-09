@@ -6,7 +6,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlDeleteBuilder_Clauses(t *testing.T) {
+func TestDeleteBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	sessions := newDelete().From("sessions")
 

@@ -115,18 +115,18 @@ func TestInsertOrConflict(t *testing.T) {
 	shared.MustExec(t, conn, `INSERT INTO config (key, value) VALUES ('theme', 'light')`)
 
 	insert := sqblsqlite.InsertInto("config").Columns("key", "value").Values(sqblsqlite.P(1), sqblsqlite.P(2))
-	value := sqblsqlite.From("config").Select("value").ToSql()
+	value := sqblsqlite.From("config").Select("value").ToSQL()
 
-	shared.MustExec(t, conn, insert.OrIgnore().ToSql(), "theme", "dark")
+	shared.MustExec(t, conn, insert.OrIgnore().ToSQL(), "theme", "dark")
 	shared.AssertSlice(t, shared.QueryColumn[string](t, conn, value), []string{"light"})
 
-	shared.MustExec(t, conn, insert.OrReplace().ToSql(), "theme", "dark")
+	shared.MustExec(t, conn, insert.OrReplace().ToSQL(), "theme", "dark")
 	shared.AssertSlice(t, shared.QueryColumn[string](t, conn, value), []string{"dark"})
 
 	for _, failing := range []string{
-		insert.OrAbort().ToSql(),
-		insert.OrFail().ToSql(),
-		insert.OrRollback().ToSql(),
+		insert.OrAbort().ToSQL(),
+		insert.OrFail().ToSQL(),
+		insert.OrRollback().ToSQL(),
 	} {
 		shared.MustFail(t, conn, "duplicate key", failing, "theme", "blue")
 	}
@@ -143,9 +143,9 @@ func TestCreateTableOptions(t *testing.T) {
 			Column("id", "INTEGER", "PRIMARY KEY").
 			Column("hits", "INTEGER", "NOT NULL").
 			Options("STRICT, WITHOUT ROWID").
-			ToSql())
+			ToSQL())
 
-	insert := sqblsqlite.InsertInto("counters").Columns("id", "hits").Values(sqblsqlite.P(1), sqblsqlite.P(2)).ToSql()
+	insert := sqblsqlite.InsertInto("counters").Columns("id", "hits").Values(sqblsqlite.P(1), sqblsqlite.P(2)).ToSQL()
 	shared.MustExec(t, conn, insert, 1, 10)
 	shared.MustFail(t, conn, "TEXT into a STRICT INTEGER column", insert, 2, "many")
 }

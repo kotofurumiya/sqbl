@@ -8,19 +8,19 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// SqlCreateIndexBuilder builds a CREATE INDEX statement.
-type SqlCreateIndexBuilder struct {
-	dialect     dialect.SqlDialect
+// CreateIndexBuilder builds a CREATE INDEX statement.
+type CreateIndexBuilder struct {
+	dialect     dialect.Dialect
 	unique      bool
 	ifNotExists bool
 	name        string
 	table       string
 	columns     []string           // column names, quoted as identifiers
 	using       string             // index method, e.g. "btree", "hash", "gist" — verbatim, unquoted
-	where       syntax.SqlFragment // partial-index predicate
+	where       syntax.SQLFragment // partial-index predicate
 }
 
-var _ SqlBuilder = SqlCreateIndexBuilder{}
+var _ Statement = CreateIndexBuilder{}
 
 // renderSQL assembles the CREATE INDEX statement for the given dialect.
 //
@@ -32,8 +32,8 @@ var _ SqlBuilder = SqlCreateIndexBuilder{}
 // predicate are passed through verbatim, so callers are responsible for
 // their correctness.
 
-// ToSql renders the CREATE INDEX statement with a trailing semicolon.
-func (b SqlCreateIndexBuilder) ToSql() string {
+// ToSQL renders the CREATE INDEX statement with a trailing semicolon.
+func (b CreateIndexBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -43,8 +43,8 @@ func (b SqlCreateIndexBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the CREATE INDEX statement without a trailing semicolon.
-func (b SqlCreateIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the CREATE INDEX statement without a trailing semicolon.
+func (b CreateIndexBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -53,7 +53,7 @@ func (b SqlCreateIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-func (b SqlCreateIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b CreateIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// CREATE [UNIQUE] INDEX [IF NOT EXISTS] "name"
 	buf.WriteString("CREATE ")
 	if b.unique {
@@ -93,31 +93,31 @@ func (b SqlCreateIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect
 }
 
 // Dialect sets the SQL dialect.
-func (b SqlCreateIndexBuilder) Dialect(d dialect.SqlDialect) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Dialect(d dialect.Dialect) CreateIndexBuilder {
 	b.dialect = d
 	return b
 }
 
 // Name sets the index name.
-func (b SqlCreateIndexBuilder) Name(name string) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Name(name string) CreateIndexBuilder {
 	b.name = name
 	return b
 }
 
 // Unique marks the index as UNIQUE.
-func (b SqlCreateIndexBuilder) Unique() SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Unique() CreateIndexBuilder {
 	b.unique = true
 	return b
 }
 
 // IfNotExists adds IF NOT EXISTS to the CREATE INDEX statement.
-func (b SqlCreateIndexBuilder) IfNotExists() SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) IfNotExists() CreateIndexBuilder {
 	b.ifNotExists = true
 	return b
 }
 
 // On sets the target table for the index.
-func (b SqlCreateIndexBuilder) On(table string) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) On(table string) CreateIndexBuilder {
 	b.table = table
 	return b
 }
@@ -127,7 +127,7 @@ func (b SqlCreateIndexBuilder) On(table string) SqlCreateIndexBuilder {
 //
 //	.Columns("email")          →  ("email")
 //	.Columns("last", "first")  →  ("last", "first")
-func (b SqlCreateIndexBuilder) Columns(cols ...string) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Columns(cols ...string) CreateIndexBuilder {
 	b.columns = append(append([]string(nil), b.columns...), cols...)
 	return b
 }
@@ -136,7 +136,7 @@ func (b SqlCreateIndexBuilder) Columns(cols ...string) SqlCreateIndexBuilder {
 // The value is written verbatim after USING without quoting.
 //
 //	.Using("hash")  →  USING hash
-func (b SqlCreateIndexBuilder) Using(method string) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Using(method string) CreateIndexBuilder {
 	b.using = method
 	return b
 }
@@ -146,7 +146,7 @@ func (b SqlCreateIndexBuilder) Using(method string) SqlCreateIndexBuilder {
 //
 //	.Where(syntax.Eq("active", true))  →  WHERE "active" = TRUE
 //	.Where(syntax.IsNull("deleted_at"))  →  WHERE "deleted_at" IS NULL
-func (b SqlCreateIndexBuilder) Where(expr syntax.SqlFragment) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Where(expr syntax.SQLFragment) CreateIndexBuilder {
 	b.where = expr
 	return b
 }

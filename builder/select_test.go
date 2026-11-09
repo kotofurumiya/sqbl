@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlSelectBuilder_Clauses(t *testing.T) {
+func TestSelectBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	runSQLCases(t, []sqlCase{
 		{
@@ -89,7 +89,7 @@ func TestSqlSelectBuilder_Clauses(t *testing.T) {
 	})
 }
 
-func TestSqlSelectBuilder_Joins(t *testing.T) {
+func TestSelectBuilder_Joins(t *testing.T) {
 	t.Parallel()
 	users := newSelect().From(syntax.As("users", "u")).Select("u.id")
 	on := syntax.Eq("u.id", "o.user_id")
@@ -155,7 +155,7 @@ func TestSqlSelectBuilder_Joins(t *testing.T) {
 	})
 }
 
-func TestSqlSelectBuilder_SetOperations(t *testing.T) {
+func TestSelectBuilder_SetOperations(t *testing.T) {
 	t.Parallel()
 	active := newSelect().From("active_users").Select("id")
 	premium := newSelect().From("premium_users").Select("id")
@@ -180,7 +180,7 @@ func TestSqlSelectBuilder_SetOperations(t *testing.T) {
 	})
 }
 
-func TestSqlSelectBuilder_Locking(t *testing.T) {
+func TestSelectBuilder_Locking(t *testing.T) {
 	t.Parallel()
 	q := newSelect().From("jobs").Select("id")
 
@@ -196,7 +196,7 @@ func TestSqlSelectBuilder_Locking(t *testing.T) {
 	})
 }
 
-func TestSqlSelectBuilder_CTE(t *testing.T) {
+func TestSelectBuilder_CTE(t *testing.T) {
 	t.Parallel()
 	recent := newSelect().From("orders").Where(syntax.Gt("created_at", syntax.P(1)))
 	big := newSelect().From("recent").Where(syntax.Gt("amount", syntax.P(2)))
@@ -245,7 +245,7 @@ func TestSqlSelectBuilder_CTE(t *testing.T) {
 	})
 }
 
-func TestSqlSelectBuilder_Subqueries(t *testing.T) {
+func TestSelectBuilder_Subqueries(t *testing.T) {
 	t.Parallel()
 	totals := newSelect().From("orders").
 		Select("user_id", syntax.As(syntax.Fn("SUM", "amount"), "total")).
@@ -300,9 +300,9 @@ func TestSqlSelectBuilder_Subqueries(t *testing.T) {
 	})
 }
 
-// TestSqlSelectBuilder_AllClauses pins the order in which clauses are rendered,
+// TestSelectBuilder_AllClauses pins the order in which clauses are rendered,
 // independent of the order the methods are called in.
-func TestSqlSelectBuilder_AllClauses(t *testing.T) {
+func TestSelectBuilder_AllClauses(t *testing.T) {
 	t.Parallel()
 	got := newSelect().
 		ForUpdate().SkipLocked().
@@ -317,7 +317,7 @@ func TestSqlSelectBuilder_AllClauses(t *testing.T) {
 		Distinct().
 		With("recent", newSelect().From("orders")).
 		UnionAll(newSelect().From("archived_totals").Select("user_id", "total")).
-		ToSql()
+		ToSQL()
 
 	sqltesting.AssertSQL(t, got, `
 		WITH "recent" AS (SELECT * FROM "orders")
@@ -333,11 +333,11 @@ func TestSqlSelectBuilder_AllClauses(t *testing.T) {
 		UNION ALL SELECT "user_id", "total" FROM "archived_totals";`)
 }
 
-// TestSqlSelectBuilder_BranchIsolation checks that deriving two queries from a
+// TestSelectBuilder_BranchIsolation checks that deriving two queries from a
 // shared base does not leak appended clauses between them or into the base.
 // The base holds three items per list so that a backing array with spare
 // capacity would be shared if a method appended in place.
-func TestSqlSelectBuilder_BranchIsolation(t *testing.T) {
+func TestSelectBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	cte := newSelect().From("t")
 	other := newSelect().From("s")
@@ -349,15 +349,15 @@ func TestSqlSelectBuilder_BranchIsolation(t *testing.T) {
 	left := base.With("l", cte).CrossJoin("jl").Except(other)
 	right := base.With("r", cte).CrossJoin("jr").Intersect(other)
 
-	sqltesting.AssertSQL(t, base.ToSql(), `
+	sqltesting.AssertSQL(t, base.ToSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s";`)
-	sqltesting.AssertSQL(t, left.ToSql(), `
+	sqltesting.AssertSQL(t, left.ToSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "l" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jl"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" EXCEPT SELECT * FROM "s";`)
-	sqltesting.AssertSQL(t, right.ToSql(), `
+	sqltesting.AssertSQL(t, right.ToSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "r" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jr"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" INTERSECT SELECT * FROM "s";`)

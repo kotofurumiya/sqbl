@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlInsertBuilder_Values(t *testing.T) {
+func TestInsertBuilder_Values(t *testing.T) {
 	t.Parallel()
 	users := newInsert().Into("users").Columns("name", "email")
 
@@ -55,7 +55,7 @@ func TestSqlInsertBuilder_Values(t *testing.T) {
 	})
 }
 
-func TestSqlInsertBuilder_ConflictHandling(t *testing.T) {
+func TestInsertBuilder_ConflictHandling(t *testing.T) {
 	t.Parallel()
 	tags := newInsert().Into("tags").Columns("name", "count").Values(syntax.P(1), syntax.P(2))
 
@@ -132,9 +132,9 @@ func TestSqlInsertBuilder_ConflictHandling(t *testing.T) {
 	})
 }
 
-// TestSqlInsertBuilder_AllClauses pins the clause order. sqbl does not validate
+// TestInsertBuilder_AllClauses pins the clause order. sqbl does not validate
 // combinations, so clauses from different databases are rendered side by side.
-func TestSqlInsertBuilder_AllClauses(t *testing.T) {
+func TestInsertBuilder_AllClauses(t *testing.T) {
 	t.Parallel()
 	got := newInsert().
 		Returning("id").
@@ -147,7 +147,7 @@ func TestSqlInsertBuilder_AllClauses(t *testing.T) {
 		Columns("name", "count").
 		Into("tags").
 		OrIgnore().
-		ToSql()
+		ToSQL()
 
 	sqltesting.AssertSQL(t, got, `
 		INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2)
@@ -156,11 +156,11 @@ func TestSqlInsertBuilder_AllClauses(t *testing.T) {
 		RETURNING "id";`)
 }
 
-// TestSqlInsertBuilder_BranchIsolation checks that deriving two statements from
+// TestInsertBuilder_BranchIsolation checks that deriving two statements from
 // a shared base does not leak appended rows or assignments between them.
 // The base holds three items per list so that a backing array with spare
 // capacity would be shared if a method appended in place.
-func TestSqlInsertBuilder_BranchIsolation(t *testing.T) {
+func TestInsertBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	base := newInsert().Into("t").
 		Values(1).Values(2).Values(3).
@@ -170,15 +170,15 @@ func TestSqlInsertBuilder_BranchIsolation(t *testing.T) {
 	left := base.Values(4).DoUpdateSet("l", 4).OnDuplicateKeyUpdate(`"l" = 4`)
 	right := base.Values(5).DoUpdate(`"r" = 5`).OnDuplicateKeyUpdateSet("r", 5)
 
-	sqltesting.AssertSQL(t, base.ToSql(), `
+	sqltesting.AssertSQL(t, base.ToSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3;`)
-	sqltesting.AssertSQL(t, left.ToSql(), `
+	sqltesting.AssertSQL(t, left.ToSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3), (4)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "l" = 4
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
-	sqltesting.AssertSQL(t, right.ToSql(), `
+	sqltesting.AssertSQL(t, right.ToSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3), (5)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "r" = 5
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)

@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlUpdateBuilder_Clauses(t *testing.T) {
+func TestUpdateBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	users := newUpdate().Table("users")
 
@@ -40,17 +40,17 @@ func TestSqlUpdateBuilder_Clauses(t *testing.T) {
 	})
 }
 
-// TestSqlUpdateBuilder_BranchIsolation checks that deriving two statements from
+// TestUpdateBuilder_BranchIsolation checks that deriving two statements from
 // a shared base does not leak assignments between them. The base holds three
 // assignments so that a backing array with spare capacity would be shared if
 // Set appended in place.
-func TestSqlUpdateBuilder_BranchIsolation(t *testing.T) {
+func TestUpdateBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	base := newUpdate().Table("t").Set("a", 1).Set("b", 2).Set("c", 3)
 	left := base.Set("l", 4)
 	right := base.Set("r", 5)
 
-	sqltesting.AssertSQL(t, base.ToSql(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3;`)
-	sqltesting.AssertSQL(t, left.ToSql(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
-	sqltesting.AssertSQL(t, right.ToSql(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
+	sqltesting.AssertSQL(t, base.ToSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3;`)
+	sqltesting.AssertSQL(t, left.ToSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
+	sqltesting.AssertSQL(t, right.ToSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
 }

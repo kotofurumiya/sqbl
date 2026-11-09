@@ -1,12 +1,12 @@
-// Package dialect defines the SqlDialect interface and common implementations
+// Package dialect defines the Dialect interface and common implementations
 // that handle database-specific SQL differences such as quoting and placeholders.
 package dialect
 
 import "bytes"
 
-// SqlDialect abstracts database-specific SQL differences such as identifier quoting,
+// Dialect abstracts database-specific SQL differences such as identifier quoting,
 // bind parameter placeholders, and boolean literal syntax.
-type SqlDialect interface {
+type Dialect interface {
 	// Quote writes a single identifier part wrapped in the dialect-specific quote
 	// character directly into buf. Any existing quote characters within the identifier
 	// are escaped.

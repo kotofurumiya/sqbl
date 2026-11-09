@@ -78,7 +78,7 @@ func Gte(left any, right any) syntax.ComparisonExpr {
 //
 //	sqblmysql.And(sqblmysql.Eq("active", true), sqblmysql.Gt("age", 18))
 //	// active = TRUE AND age > 18
-func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
+func And(exprs ...syntax.SQLFragment) syntax.LogicalExpr {
 	return syntax.And(exprs...)
 }
 
@@ -86,7 +86,7 @@ func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
 //
 //	sqblmysql.Or(sqblmysql.Eq("role", sqblmysql.P(1)), sqblmysql.Eq("role", sqblmysql.P(2)))
 //	// role = <param> OR role = <param>
-func Or(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
+func Or(exprs ...syntax.SQLFragment) syntax.LogicalExpr {
 	return syntax.Or(exprs...)
 }
 
@@ -108,7 +108,7 @@ func Desc(col string) syntax.Order {
 //
 //	sqblmysql.Not(sqblmysql.Eq("active", false))
 //	// NOT (`active` = FALSE)
-func Not(expr syntax.SqlFragment) syntax.NotExpr {
+func Not(expr syntax.SQLFragment) syntax.NotExpr {
 	return syntax.Not(expr)
 }
 
@@ -174,7 +174,7 @@ func P(args ...any) syntax.Parameter {
 //
 //	sqblmysql.Fn("SUM", "amount")   // SUM(amount)
 //	sqblmysql.Fn("COUNT", "*")      // COUNT(*)
-func Fn(name string, args ...any) syntax.SqlFn {
+func Fn(name string, args ...any) syntax.FnExpr {
 	return syntax.Fn(name, args...)
 }
 

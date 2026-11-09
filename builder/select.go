@@ -13,7 +13,7 @@ import (
 // cteClause represents a single WITH ... AS (...) entry.
 type cteClause struct {
 	Name      string
-	Builder   SqlSelectBuilder
+	Builder   SelectBuilder
 	Recursive bool
 }
 
@@ -22,10 +22,10 @@ type cteClause struct {
 type setOpClause struct {
 	Op      string
 	All     bool
-	Builder SqlSelectBuilder
+	Builder SelectBuilder
 }
 
-// SqlSelectBuilder constructs a SQL SELECT statement using a fluent method chain.
+// SelectBuilder constructs a SQL SELECT statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.From) to create an instance.
 //
 //	q := sqblpg.From("users").
@@ -33,19 +33,19 @@ type setOpClause struct {
 //	    Where(sqblpg.Eq("active", true)).
 //	    OrderBy("name ASC").
 //	    Limit(20)
-//	sql := q.ToSql()
-type SqlSelectBuilder struct {
-	dialect    dialect.SqlDialect
+//	sql := q.ToSQL()
+type SelectBuilder struct {
+	dialect    dialect.Dialect
 	ctes       []cteClause          // WITH ...
 	distinct   bool                 // DISTINCT
 	distinctOn []string             // DISTINCT ON (col1, col2) — PostgreSQL only
-	columns    []syntax.SqlFragment // SELECT ... (Ident | Aliased | any SqlFragment)
-	from       syntax.SqlFragment   // FROM (Ident | SqlSelectBuilder | Aliased | any SqlFragment)
+	columns    []syntax.SQLFragment // SELECT ... (Ident | Aliased | any SQLFragment)
+	from       syntax.SQLFragment   // FROM (Ident | SelectBuilder | Aliased | any SQLFragment)
 	joins      []syntax.JoinClause  // JOIN ...
-	where      syntax.SqlFragment   // WHERE ...
-	groups     []syntax.SqlFragment // GROUP BY ...
-	having     syntax.SqlFragment   // HAVING ...
-	orders     []syntax.SqlFragment // ORDER BY ...
+	where      syntax.SQLFragment   // WHERE ...
+	groups     []syntax.SQLFragment // GROUP BY ...
+	having     syntax.SQLFragment   // HAVING ...
+	orders     []syntax.SQLFragment // ORDER BY ...
 	limit      *int                 // LIMIT
 	offset     *int                 // OFFSET
 	lock       string               // FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY SHARE
@@ -53,13 +53,13 @@ type SqlSelectBuilder struct {
 	setOps     []setOpClause        // UNION, INTERSECT, EXCEPT (and ALL variants)
 }
 
-var _ syntax.Subquery = SqlSelectBuilder{}
-var _ SqlBuilder = SqlSelectBuilder{}
+var _ syntax.Subquery = SelectBuilder{}
+var _ Statement = SelectBuilder{}
 
-// ToSql renders the query using the dialect set on this builder.
+// ToSQL renders the query using the dialect set on this builder.
 //
-//	sql := sqblpg.From("users").Select("id").ToSql()
-func (b SqlSelectBuilder) ToSql() string {
+//	sql := sqblpg.From("users").Select("id").ToSQL()
+func (b SelectBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -69,9 +69,9 @@ func (b SqlSelectBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the statement using the given dialect, without a trailing semicolon.
-// Implements SqlBuilder.
-func (b SqlSelectBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the statement using the given dialect, without a trailing semicolon.
+// Implements Statement.
+func (b SelectBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -80,21 +80,21 @@ func (b SqlSelectBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-// AppendSQL implements syntax.SqlFragment for subquery embedding.
+// AppendSQL implements syntax.SQLFragment for subquery embedding.
 // Writes the query wrapped in parentheses directly into buf.
-func (b SqlSelectBuilder) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b SelectBuilder) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	buf.WriteByte('(')
 	b.renderSQL(buf, d)
 	buf.WriteByte(')')
 }
 
 // IsSubquery implements syntax.Subquery, so IN (subquery) renders single parentheses.
-func (b SqlSelectBuilder) IsSubquery() {}
+func (b SelectBuilder) IsSubquery() {}
 
 // renderSQL writes the query (without trailing semicolon) into buf.
 // WriteString/Write calls append directly to the buffer, eliminating intermediate
 // string values and the []string slice that strings.Join would require.
-func (b SqlSelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b SelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// WITH [RECURSIVE] name AS (...), ...
 	// Scan once to determine whether RECURSIVE is needed, then render each CTE.
 	if len(b.ctes) > 0 {
@@ -253,7 +253,7 @@ func (b SqlSelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 // Dialect-specific constructors (e.g. sqblpg.From) call this automatically.
 //
 //	b.Dialect(pgDialect)
-func (b SqlSelectBuilder) Dialect(d dialect.SqlDialect) SqlSelectBuilder {
+func (b SelectBuilder) Dialect(d dialect.Dialect) SelectBuilder {
 	b.dialect = d
 	return b
 }
@@ -264,7 +264,7 @@ func (b SqlSelectBuilder) Dialect(d dialect.SqlDialect) SqlSelectBuilder {
 //	sqblpg.From("users")
 //	sqblpg.From(sqbl.As("users", "u"))
 //	sqblpg.From(sqbl.As(subquery, "sub"))
-func (b SqlSelectBuilder) From(table any) SqlSelectBuilder {
+func (b SelectBuilder) From(table any) SelectBuilder {
 	b.from = syntax.ToFragment(table)
 	return b
 }
@@ -275,8 +275,8 @@ func (b SqlSelectBuilder) From(table any) SqlSelectBuilder {
 //
 //	b.Select("id", "name")
 //	b.Select(sqbl.As(sqbl.Fn("SUM", "amount"), "total"))
-func (b SqlSelectBuilder) Select(columns ...any) SqlSelectBuilder {
-	cols := make([]syntax.SqlFragment, len(columns))
+func (b SelectBuilder) Select(columns ...any) SelectBuilder {
+	cols := make([]syntax.SQLFragment, len(columns))
 	for i, col := range columns {
 		cols[i] = syntax.ToFragment(col)
 	}
@@ -288,7 +288,7 @@ func (b SqlSelectBuilder) Select(columns ...any) SqlSelectBuilder {
 //
 //	b.Join(sqbl.As("orders", "o"), sqbl.Eq("u.id", "o.user_id"))
 //	// INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
-func (b SqlSelectBuilder) Join(table any, on syntax.SqlFragment) SqlSelectBuilder {
+func (b SelectBuilder) Join(table any, on syntax.SQLFragment) SelectBuilder {
 	return b.InnerJoin(table, on)
 }
 
@@ -298,7 +298,7 @@ func (b SqlSelectBuilder) Join(table any, on syntax.SqlFragment) SqlSelectBuilde
 //
 //	b.Where(sqblpg.Eq("status", sqblpg.P(1)))
 //	b.Where(sqblpg.And(sqblpg.Eq("status", sqblpg.P(1)), sqblpg.Gt("age", 18)))
-func (b SqlSelectBuilder) Where(expr syntax.SqlFragment) SqlSelectBuilder {
+func (b SelectBuilder) Where(expr syntax.SQLFragment) SelectBuilder {
 	b.where = expr
 	return b
 }
@@ -307,7 +307,7 @@ func (b SqlSelectBuilder) Where(expr syntax.SqlFragment) SqlSelectBuilder {
 //
 //	sqblpg.From("users").Select("country").Distinct()
 //	// SELECT DISTINCT country FROM users
-func (b SqlSelectBuilder) Distinct() SqlSelectBuilder {
+func (b SelectBuilder) Distinct() SelectBuilder {
 	b.distinct = true
 	return b
 }
@@ -318,7 +318,7 @@ func (b SqlSelectBuilder) Distinct() SqlSelectBuilder {
 //
 //	sqblpg.From("orders").Select("user_id", "amount").DistinctOn("user_id").OrderBy(sqblpg.Desc("amount"))
 //	// SELECT DISTINCT ON ("user_id") "user_id", "amount" FROM "orders" ORDER BY "amount" DESC
-func (b SqlSelectBuilder) DistinctOn(cols ...string) SqlSelectBuilder {
+func (b SelectBuilder) DistinctOn(cols ...string) SelectBuilder {
 	b.distinctOn = slices.Clone(cols)
 	return b
 }
@@ -328,8 +328,8 @@ func (b SqlSelectBuilder) DistinctOn(cols ...string) SqlSelectBuilder {
 //
 //	b.GroupBy("department", "role")
 //	b.GroupBy(sqbl.Raw(`EXTRACT(year FROM "created_at")`))
-func (b SqlSelectBuilder) GroupBy(cols ...any) SqlSelectBuilder {
-	groups := make([]syntax.SqlFragment, len(cols))
+func (b SelectBuilder) GroupBy(cols ...any) SelectBuilder {
+	groups := make([]syntax.SQLFragment, len(cols))
 	for i, col := range cols {
 		groups[i] = syntax.ToFragment(col)
 	}
@@ -343,7 +343,7 @@ func (b SqlSelectBuilder) GroupBy(cols ...any) SqlSelectBuilder {
 //
 //	b.Having(sqblpg.Gt(sqblpg.Fn("SUM", "amount"), 1000))
 //	// HAVING SUM("amount") > 1000
-func (b SqlSelectBuilder) Having(expr syntax.SqlFragment) SqlSelectBuilder {
+func (b SelectBuilder) Having(expr syntax.SQLFragment) SelectBuilder {
 	b.having = expr
 	return b
 }
@@ -353,8 +353,8 @@ func (b SqlSelectBuilder) Having(expr syntax.SqlFragment) SqlSelectBuilder {
 //
 //	b.OrderBy(syntax.Asc("name"), syntax.Desc("created_at"))
 //	// ORDER BY name ASC, created_at DESC
-func (b SqlSelectBuilder) OrderBy(cols ...any) SqlSelectBuilder {
-	orders := make([]syntax.SqlFragment, len(cols))
+func (b SelectBuilder) OrderBy(cols ...any) SelectBuilder {
+	orders := make([]syntax.SQLFragment, len(cols))
 	for i, col := range cols {
 		orders[i] = syntax.ToFragment(col)
 	}
@@ -366,7 +366,7 @@ func (b SqlSelectBuilder) OrderBy(cols ...any) SqlSelectBuilder {
 //
 //	b.Limit(20)
 //	// LIMIT 20
-func (b SqlSelectBuilder) Limit(n int) SqlSelectBuilder {
+func (b SelectBuilder) Limit(n int) SelectBuilder {
 	b.limit = &n
 	return b
 }
@@ -375,7 +375,7 @@ func (b SqlSelectBuilder) Limit(n int) SqlSelectBuilder {
 //
 //	b.Limit(20).Offset(40)
 //	// LIMIT 20 OFFSET 40
-func (b SqlSelectBuilder) Offset(n int) SqlSelectBuilder {
+func (b SelectBuilder) Offset(n int) SelectBuilder {
 	b.offset = &n
 	return b
 }
@@ -385,7 +385,7 @@ func (b SqlSelectBuilder) Offset(n int) SqlSelectBuilder {
 //
 //	b.ForUpdate()
 //	// SELECT ... FOR UPDATE
-func (b SqlSelectBuilder) ForUpdate() SqlSelectBuilder {
+func (b SelectBuilder) ForUpdate() SelectBuilder {
 	b.lock = "FOR UPDATE"
 	return b
 }
@@ -395,7 +395,7 @@ func (b SqlSelectBuilder) ForUpdate() SqlSelectBuilder {
 //
 //	b.ForShare()
 //	// SELECT ... FOR SHARE
-func (b SqlSelectBuilder) ForShare() SqlSelectBuilder {
+func (b SelectBuilder) ForShare() SelectBuilder {
 	b.lock = "FOR SHARE"
 	return b
 }
@@ -405,7 +405,7 @@ func (b SqlSelectBuilder) ForShare() SqlSelectBuilder {
 //
 //	b.ForNoKeyUpdate()
 //	// SELECT ... FOR NO KEY UPDATE
-func (b SqlSelectBuilder) ForNoKeyUpdate() SqlSelectBuilder {
+func (b SelectBuilder) ForNoKeyUpdate() SelectBuilder {
 	b.lock = "FOR NO KEY UPDATE"
 	return b
 }
@@ -415,7 +415,7 @@ func (b SqlSelectBuilder) ForNoKeyUpdate() SqlSelectBuilder {
 //
 //	b.ForKeyShare()
 //	// SELECT ... FOR KEY SHARE
-func (b SqlSelectBuilder) ForKeyShare() SqlSelectBuilder {
+func (b SelectBuilder) ForKeyShare() SelectBuilder {
 	b.lock = "FOR KEY SHARE"
 	return b
 }
@@ -425,7 +425,7 @@ func (b SqlSelectBuilder) ForKeyShare() SqlSelectBuilder {
 //
 //	b.ForUpdate().Nowait()
 //	// SELECT ... FOR UPDATE NOWAIT
-func (b SqlSelectBuilder) Nowait() SqlSelectBuilder {
+func (b SelectBuilder) Nowait() SelectBuilder {
 	b.lockOption = "NOWAIT"
 	return b
 }
@@ -435,7 +435,7 @@ func (b SqlSelectBuilder) Nowait() SqlSelectBuilder {
 //
 //	b.ForUpdate().SkipLocked()
 //	// SELECT ... FOR UPDATE SKIP LOCKED
-func (b SqlSelectBuilder) SkipLocked() SqlSelectBuilder {
+func (b SelectBuilder) SkipLocked() SelectBuilder {
 	b.lockOption = "SKIP LOCKED"
 	return b
 }
@@ -444,7 +444,7 @@ func (b SqlSelectBuilder) SkipLocked() SqlSelectBuilder {
 //
 //	b.InnerJoin(sqbl.As("orders", "o"), "u.id = o.user_id")
 //	// INNER JOIN orders AS o ON u.id = o.user_id
-func (b SqlSelectBuilder) InnerJoin(table any, on syntax.SqlFragment) SqlSelectBuilder {
+func (b SelectBuilder) InnerJoin(table any, on syntax.SQLFragment) SelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:  "INNER",
 		Table: syntax.ToFragment(table),
@@ -457,7 +457,7 @@ func (b SqlSelectBuilder) InnerJoin(table any, on syntax.SqlFragment) SqlSelectB
 //
 //	b.LeftJoin(sqbl.As("profiles", "p"), sqbl.Eq("u.id", "p.user_id"))
 //	// LEFT JOIN profiles AS p ON u.id = p.user_id
-func (b SqlSelectBuilder) LeftJoin(table any, on syntax.SqlFragment) SqlSelectBuilder {
+func (b SelectBuilder) LeftJoin(table any, on syntax.SQLFragment) SelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:  "LEFT",
 		Table: syntax.ToFragment(table),
@@ -471,7 +471,7 @@ func (b SqlSelectBuilder) LeftJoin(table any, on syntax.SqlFragment) SqlSelectBu
 //
 //	b.CrossJoin("sizes")
 //	// CROSS JOIN sizes
-func (b SqlSelectBuilder) CrossJoin(table any) SqlSelectBuilder {
+func (b SelectBuilder) CrossJoin(table any) SelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:  "CROSS",
 		Table: syntax.ToFragment(table),
@@ -487,7 +487,7 @@ func (b SqlSelectBuilder) CrossJoin(table any) SqlSelectBuilder {
 //	recent := sqblpg.From("orders").Where(sqblpg.Gte("created_at", "2025-01-01"))
 //	b.With("recent_orders", recent)
 //	// WITH "recent_orders" AS (SELECT ...) SELECT ...
-func (b SqlSelectBuilder) With(name string, q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) With(name string, q SelectBuilder) SelectBuilder {
 	b.ctes = append(append([]cteClause(nil), b.ctes...), cteClause{Name: name, Builder: q})
 	return b
 }
@@ -500,7 +500,7 @@ func (b SqlSelectBuilder) With(name string, q SqlSelectBuilder) SqlSelectBuilder
 //	recursive := sqblpg.From("employees").Join(sqblpg.As("org", "o"), sqblpg.Eq("employees.manager_id", "o.id")).Select("employees.id", "employees.manager_id")
 //	b.WithRecursive("org", base.Union(recursive))
 //	// WITH RECURSIVE "org" AS (...) SELECT ...
-func (b SqlSelectBuilder) WithRecursive(name string, q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) WithRecursive(name string, q SelectBuilder) SelectBuilder {
 	b.ctes = append(append([]cteClause(nil), b.ctes...), cteClause{Name: name, Builder: q, Recursive: true})
 	return b
 }
@@ -514,7 +514,7 @@ func (b SqlSelectBuilder) WithRecursive(name string, q SqlSelectBuilder) SqlSele
 //	    "latest",
 //	)
 //	// FROM "users" AS "u" LEFT JOIN LATERAL (SELECT ...) AS "latest" ON TRUE
-func (b SqlSelectBuilder) LeftLateralJoin(subquery SqlSelectBuilder, alias string) SqlSelectBuilder {
+func (b SelectBuilder) LeftLateralJoin(subquery SelectBuilder, alias string) SelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:    "LEFT",
 		Table:   syntax.As(subquery, alias),
@@ -531,7 +531,7 @@ func (b SqlSelectBuilder) LeftLateralJoin(subquery SqlSelectBuilder, alias strin
 //	    "latest",
 //	)
 //	// FROM "users" AS "u" CROSS JOIN LATERAL (SELECT ...) AS "latest"
-func (b SqlSelectBuilder) CrossLateralJoin(subquery SqlSelectBuilder, alias string) SqlSelectBuilder {
+func (b SelectBuilder) CrossLateralJoin(subquery SelectBuilder, alias string) SelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:    "CROSS",
 		Table:   syntax.As(subquery, alias),
@@ -545,7 +545,7 @@ func (b SqlSelectBuilder) CrossLateralJoin(subquery SqlSelectBuilder, alias stri
 //
 //	b.Union(sqblpg.From("archived_users").Select("id", "name"))
 //	// SELECT ... UNION SELECT ...
-func (b SqlSelectBuilder) Union(q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) Union(q SelectBuilder) SelectBuilder {
 	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "UNION", All: false, Builder: q})
 	return b
 }
@@ -555,7 +555,7 @@ func (b SqlSelectBuilder) Union(q SqlSelectBuilder) SqlSelectBuilder {
 //
 //	b.UnionAll(sqblpg.From("archived_users").Select("id", "name"))
 //	// SELECT ... UNION ALL SELECT ...
-func (b SqlSelectBuilder) UnionAll(q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) UnionAll(q SelectBuilder) SelectBuilder {
 	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "UNION", All: true, Builder: q})
 	return b
 }
@@ -564,7 +564,7 @@ func (b SqlSelectBuilder) UnionAll(q SqlSelectBuilder) SqlSelectBuilder {
 //
 //	b.RightJoin(sqbl.As("orders", "o"), sqbl.Eq("u.id", "o.user_id"))
 //	// RIGHT JOIN orders AS o ON u.id = o.user_id
-func (b SqlSelectBuilder) RightJoin(table any, on syntax.SqlFragment) SqlSelectBuilder {
+func (b SelectBuilder) RightJoin(table any, on syntax.SQLFragment) SelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:  "RIGHT",
 		Table: syntax.ToFragment(table),
@@ -577,7 +577,7 @@ func (b SqlSelectBuilder) RightJoin(table any, on syntax.SqlFragment) SqlSelectB
 //
 //	b.FullJoin(sqbl.As("orders", "o"), sqbl.Eq("u.id", "o.user_id"))
 //	// FULL OUTER JOIN orders AS o ON u.id = o.user_id
-func (b SqlSelectBuilder) FullJoin(table any, on syntax.SqlFragment) SqlSelectBuilder {
+func (b SelectBuilder) FullJoin(table any, on syntax.SQLFragment) SelectBuilder {
 	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
 		Kind:  "FULL OUTER",
 		Table: syntax.ToFragment(table),
@@ -591,7 +591,7 @@ func (b SqlSelectBuilder) FullJoin(table any, on syntax.SqlFragment) SqlSelectBu
 //
 //	b.Intersect(sqblpg.From("premium_users").Select("id"))
 //	// SELECT ... INTERSECT SELECT ...
-func (b SqlSelectBuilder) Intersect(q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) Intersect(q SelectBuilder) SelectBuilder {
 	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "INTERSECT", All: false, Builder: q})
 	return b
 }
@@ -601,7 +601,7 @@ func (b SqlSelectBuilder) Intersect(q SqlSelectBuilder) SqlSelectBuilder {
 //
 //	b.IntersectAll(sqblpg.From("premium_users").Select("id"))
 //	// SELECT ... INTERSECT ALL SELECT ...
-func (b SqlSelectBuilder) IntersectAll(q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) IntersectAll(q SelectBuilder) SelectBuilder {
 	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "INTERSECT", All: true, Builder: q})
 	return b
 }
@@ -611,7 +611,7 @@ func (b SqlSelectBuilder) IntersectAll(q SqlSelectBuilder) SqlSelectBuilder {
 //
 //	b.Except(sqblpg.From("banned_users").Select("id"))
 //	// SELECT ... EXCEPT SELECT ...
-func (b SqlSelectBuilder) Except(q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) Except(q SelectBuilder) SelectBuilder {
 	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "EXCEPT", All: false, Builder: q})
 	return b
 }
@@ -621,7 +621,7 @@ func (b SqlSelectBuilder) Except(q SqlSelectBuilder) SqlSelectBuilder {
 //
 //	b.ExceptAll(sqblpg.From("banned_users").Select("id"))
 //	// SELECT ... EXCEPT ALL SELECT ...
-func (b SqlSelectBuilder) ExceptAll(q SqlSelectBuilder) SqlSelectBuilder {
+func (b SelectBuilder) ExceptAll(q SelectBuilder) SelectBuilder {
 	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "EXCEPT", All: true, Builder: q})
 	return b
 }

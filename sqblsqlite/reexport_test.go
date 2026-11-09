@@ -16,7 +16,7 @@ func TestReexports(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		f    syntax.SqlFragment
+		f    syntax.SQLFragment
 		want string
 	}{
 		{"As", sqblsqlite.As("users", "u"), `"users" AS "u"`},
@@ -46,7 +46,7 @@ func TestReexports(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var buf bytes.Buffer
-			tt.f.AppendSQL(&buf, &dialect.SqliteDialect{})
+			tt.f.AppendSQL(&buf, &dialect.SQLite{})
 			sqltesting.AssertSQL(t, buf.String(), tt.want)
 		})
 	}

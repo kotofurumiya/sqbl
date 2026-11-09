@@ -2,7 +2,7 @@ package builder_test
 
 import "testing"
 
-func TestSqlCreateDatabaseBuilder_Clauses(t *testing.T) {
+func TestCreateDatabaseBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	app := newCreateDatabase().Name("app_test")
 
@@ -14,7 +14,7 @@ func TestSqlCreateDatabaseBuilder_Clauses(t *testing.T) {
 	})
 }
 
-func TestSqlDropDatabaseBuilder_Clauses(t *testing.T) {
+func TestDropDatabaseBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	app := newDropDatabase().Name("app_test")
 

@@ -18,21 +18,21 @@ func runReturning(t *testing.T, conn Conn, s Suite) {
 	var id int
 	var title string
 	MustScan(t, conn,
-		s.InsertInto("articles").Columns("id", "title").Values(syntax.P(1), syntax.P(2)).Returning("id", "title").ToSql(),
+		s.InsertInto("articles").Columns("id", "title").Values(syntax.P(1), syntax.P(2)).Returning("id", "title").ToSQL(),
 		[]any{1, "Hello"}, &id, &title)
 	if id != 1 || title != "Hello" {
 		t.Errorf("INSERT RETURNING = (%d, %q); want (1, %q)", id, title, "Hello")
 	}
 
 	MustScan(t, conn,
-		s.Update("articles").Set("title", syntax.P(1)).Where(syntax.Eq("id", syntax.P(2))).Returning("title").ToSql(),
+		s.Update("articles").Set("title", syntax.P(1)).Where(syntax.Eq("id", syntax.P(2))).Returning("title").ToSQL(),
 		[]any{"Updated", 1}, &title)
 	if title != "Updated" {
 		t.Errorf("UPDATE RETURNING = %q; want %q", title, "Updated")
 	}
 
 	MustScan(t, conn,
-		s.DeleteFrom("articles").Where(syntax.Eq("id", syntax.P(1))).Returning("id").ToSql(),
+		s.DeleteFrom("articles").Where(syntax.Eq("id", syntax.P(1))).Returning("id").ToSQL(),
 		[]any{1}, &id)
 	if id != 1 {
 		t.Errorf("DELETE RETURNING = %d; want 1", id)
@@ -66,9 +66,9 @@ func runOnConflict(t *testing.T, conn Conn, s Suite) {
 			Column("id", "INTEGER", "PRIMARY KEY").
 			Column("name", "VARCHAR(32)", "NOT NULL").
 			Column("version", "INTEGER", "NOT NULL").
-			ToSql())
-		MustExec(t, conn, s.InsertInto(table).Columns("id", "name", "version").Values(1, syntax.Raw("'Alice'"), 1).ToSql())
-		return s.From(table).Select("id", "name", "version").OrderBy(syntax.Asc("id")).ToSql()
+			ToSQL())
+		MustExec(t, conn, s.InsertInto(table).Columns("id", "name", "version").Values(1, syntax.Raw("'Alice'"), 1).ToSQL())
+		return s.From(table).Select("id", "name", "version").OrderBy(syntax.Asc("id")).ToSQL()
 	}
 
 	t.Run("DoNothing", func(t *testing.T) {
@@ -79,7 +79,7 @@ func runOnConflict(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
 			OnConflictDoNothing().
 			Returning("id").
-			ToSql()
+			ToSQL()
 		var id int
 		if err := conn.QueryRow(t.Context(), sql, 1, "Bob", 2).Scan(&id); !errors.Is(err, ErrNoRows) {
 			t.Errorf("ignored insert returned %v; want ErrNoRows", err)
@@ -95,7 +95,7 @@ func runOnConflict(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
 			OnConflict("id").
 			DoUpdate("name = excluded.name").
-			ToSql()
+			ToSQL()
 		MustExec(t, conn, raw, 1, "Bob", 9)
 		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Bob", 1}})
 
@@ -105,7 +105,7 @@ func runOnConflict(t *testing.T, conn Conn, s Suite) {
 			OnConflict("id").
 			DoUpdateSet("name", "excluded.name").
 			DoUpdateSet("version", syntax.Raw(table+".version + 1")).
-			ToSql()
+			ToSQL()
 		MustExec(t, conn, structured, 1, "Carol", 9)
 		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Carol", 2}})
 	})
@@ -121,7 +121,7 @@ func runOnConflict(t *testing.T, conn Conn, s Suite) {
 			DoUpdateSet("name", "excluded.name").
 			DoUpdateSet("version", "excluded.version").
 			DoUpdateWhere(syntax.Lt(table+".version", "excluded.version")).
-			ToSql()
+			ToSQL()
 		MustExec(t, conn, sql, 1, "Stale", 0)
 		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Alice", 1}})
 		MustExec(t, conn, sql, 1, "Fresh", 2)
@@ -135,14 +135,14 @@ func runOnConflict(t *testing.T, conn Conn, s Suite) {
 		const table = "it_oc_partial"
 		selectAll := newTable(t, table)
 		// name is unique only among rows with version 1.
-		MustExec(t, conn, s.CreateIndex(table+"_name").On(table).Columns("name").Unique().Where(syntax.Eq("version", 1)).ToSql())
+		MustExec(t, conn, s.CreateIndex(table+"_name").On(table).Columns("name").Unique().Where(syntax.Eq("version", 1)).ToSQL())
 		sql := s.InsertInto(table).
 			Columns("id", "name", "version").
 			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
 			OnConflict("name").
 			OnConflictWhere(syntax.Eq("version", 1)).
 			DoUpdateSet("id", "excluded.id").
-			ToSql()
+			ToSQL()
 		// Conflicts with Alice inside the index, so her row takes the new id.
 		MustExec(t, conn, sql, 2, "Alice", 1)
 		// Version 2 rows fall outside the index, so this is a plain insert.

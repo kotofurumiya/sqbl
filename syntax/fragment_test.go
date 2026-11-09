@@ -9,9 +9,9 @@ import (
 )
 
 // render renders f with PostgreSQL, the dialect used where dialect differences are not under test.
-func render(f SqlFragment) string {
+func render(f SQLFragment) string {
 	var buf bytes.Buffer
-	f.AppendSQL(&buf, &dialect.PostgresDialect{})
+	f.AppendSQL(&buf, &dialect.Postgres{})
 	return buf.String()
 }
 
@@ -20,7 +20,7 @@ func TestDialectDependentFragments(t *testing.T) {
 
 	tests := []struct {
 		name                            string
-		fragment                        SqlFragment
+		fragment                        SQLFragment
 		postgres, mysql, sqlite, simple string
 	}{
 		{"Ident", Ident("name"), `"name"`, "`name`", `"name"`, `"name"`},
@@ -40,13 +40,13 @@ func TestDialectDependentFragments(t *testing.T) {
 			t.Parallel()
 			for _, c := range []struct {
 				name string
-				d    dialect.SqlDialect
+				d    dialect.Dialect
 				want string
 			}{
-				{"postgres", &dialect.PostgresDialect{}, tt.postgres},
-				{"mysql", &dialect.MysqlDialect{}, tt.mysql},
-				{"sqlite", &dialect.SqliteDialect{}, tt.sqlite},
-				{"simple", &dialect.SimpleDialect{}, tt.simple},
+				{"postgres", &dialect.Postgres{}, tt.postgres},
+				{"mysql", &dialect.MySQL{}, tt.mysql},
+				{"sqlite", &dialect.SQLite{}, tt.sqlite},
+				{"simple", &dialect.Simple{}, tt.simple},
 			} {
 				var buf bytes.Buffer
 				tt.fragment.AppendSQL(&buf, c.d)
@@ -89,7 +89,7 @@ func TestToFragment(t *testing.T) {
 			sqltesting.AssertSQL(t, render(ToFragment(tt.input)), tt.want)
 
 			var buf bytes.Buffer
-			AppendValue(&buf, &dialect.PostgresDialect{}, tt.input)
+			AppendValue(&buf, &dialect.Postgres{}, tt.input)
 			sqltesting.AssertSQL(t, buf.String(), tt.want)
 		})
 	}
@@ -100,7 +100,7 @@ func TestAliasAndOrder(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		fragment SqlFragment
+		fragment SQLFragment
 		want     string
 	}{
 		{"As table", As("users", "u"), `"users" AS "u"`},
@@ -130,11 +130,11 @@ func TestCopiesCallerSlices(t *testing.T) {
 	t.Parallel()
 	names := []string{"a", "b"}
 	args := []any{"a", "b"}
-	exprs := []SqlFragment{Raw("x"), Raw("y")}
+	exprs := []SQLFragment{Raw("x"), Raw("y")}
 
 	tests := []struct {
 		name     string
-		fragment SqlFragment
+		fragment SQLFragment
 		want     string
 	}{
 		{"AsColumns", AsColumns("t", "s", names...), `"t" AS "s" ("a", "b")`},

@@ -7,22 +7,22 @@ import (
 	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 )
 
-// SqlDropDatabaseBuilder constructs a DROP DATABASE statement using a fluent method chain.
+// DropDatabaseBuilder constructs a DROP DATABASE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.DropDatabase) to create an instance.
 //
 //	sqblpg.DropDatabase("app_test").IfExists()
 //	sqblpg.DropDatabase("app_test").IfExists().Force()
-type SqlDropDatabaseBuilder struct {
-	dialect  dialect.SqlDialect
+type DropDatabaseBuilder struct {
+	dialect  dialect.Dialect
 	name     string
 	ifExists bool
 	force    bool
 }
 
-var _ SqlBuilder = SqlDropDatabaseBuilder{}
+var _ Statement = DropDatabaseBuilder{}
 
-// ToSql renders the DROP DATABASE statement with a trailing semicolon.
-func (b SqlDropDatabaseBuilder) ToSql() string {
+// ToSQL renders the DROP DATABASE statement with a trailing semicolon.
+func (b DropDatabaseBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -32,8 +32,8 @@ func (b SqlDropDatabaseBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the DROP DATABASE statement using the given dialect, without a trailing semicolon.
-func (b SqlDropDatabaseBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the DROP DATABASE statement using the given dialect, without a trailing semicolon.
+func (b DropDatabaseBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -42,7 +42,7 @@ func (b SqlDropDatabaseBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-func (b SqlDropDatabaseBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b DropDatabaseBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	buf.WriteString("DROP DATABASE")
 	if b.ifExists {
 		buf.WriteString(" IF EXISTS")
@@ -57,13 +57,13 @@ func (b SqlDropDatabaseBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialec
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlDropDatabaseBuilder) Dialect(d dialect.SqlDialect) SqlDropDatabaseBuilder {
+func (b DropDatabaseBuilder) Dialect(d dialect.Dialect) DropDatabaseBuilder {
 	b.dialect = d
 	return b
 }
 
 // Name sets the database name. It is quoted as a single identifier.
-func (b SqlDropDatabaseBuilder) Name(name string) SqlDropDatabaseBuilder {
+func (b DropDatabaseBuilder) Name(name string) DropDatabaseBuilder {
 	b.name = name
 	return b
 }
@@ -72,7 +72,7 @@ func (b SqlDropDatabaseBuilder) Name(name string) SqlDropDatabaseBuilder {
 //
 //	sqblpg.DropDatabase("app_test").IfExists()
 //	// DROP DATABASE IF EXISTS "app_test"
-func (b SqlDropDatabaseBuilder) IfExists() SqlDropDatabaseBuilder {
+func (b DropDatabaseBuilder) IfExists() DropDatabaseBuilder {
 	b.ifExists = true
 	return b
 }
@@ -82,7 +82,7 @@ func (b SqlDropDatabaseBuilder) IfExists() SqlDropDatabaseBuilder {
 //
 //	sqblpg.DropDatabase("app_test").Force()
 //	// DROP DATABASE "app_test" WITH (FORCE)
-func (b SqlDropDatabaseBuilder) Force() SqlDropDatabaseBuilder {
+func (b DropDatabaseBuilder) Force() DropDatabaseBuilder {
 	b.force = true
 	return b
 }

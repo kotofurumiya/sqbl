@@ -18,11 +18,11 @@ type columnDef struct {
 // constraintFunc writes a table-level constraint into buf for the given dialect.
 // Using a closure lets each constraint type handle identifier quoting at render time
 // rather than at method-call time.
-type constraintFunc func(buf *bytes.Buffer, d dialect.SqlDialect)
+type constraintFunc func(buf *bytes.Buffer, d dialect.Dialect)
 
-// SqlCreateTableBuilder builds a CREATE TABLE statement.
-type SqlCreateTableBuilder struct {
-	dialect          dialect.SqlDialect
+// CreateTableBuilder builds a CREATE TABLE statement.
+type CreateTableBuilder struct {
+	dialect          dialect.Dialect
 	table            string
 	ifNotExists      bool
 	columns          []columnDef
@@ -30,7 +30,7 @@ type SqlCreateTableBuilder struct {
 	options          []string
 }
 
-var _ SqlBuilder = SqlCreateTableBuilder{}
+var _ Statement = CreateTableBuilder{}
 
 // renderSQL assembles the CREATE TABLE statement for the given dialect.
 //
@@ -51,8 +51,8 @@ var _ SqlBuilder = SqlCreateTableBuilder{}
 //	FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE
 //	CHECK (price > 0)
 
-// ToSql renders the CREATE TABLE statement with a trailing semicolon.
-func (b SqlCreateTableBuilder) ToSql() string {
+// ToSQL renders the CREATE TABLE statement with a trailing semicolon.
+func (b CreateTableBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -62,8 +62,8 @@ func (b SqlCreateTableBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the CREATE TABLE statement without a trailing semicolon.
-func (b SqlCreateTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the CREATE TABLE statement without a trailing semicolon.
+func (b CreateTableBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -72,7 +72,7 @@ func (b SqlCreateTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-func (b SqlCreateTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b CreateTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// CREATE TABLE [IF NOT EXISTS] "table" (
 	buf.WriteString("CREATE TABLE ")
 	if b.ifNotExists {
@@ -119,19 +119,19 @@ func (b SqlCreateTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect
 }
 
 // Dialect sets the SQL dialect.
-func (b SqlCreateTableBuilder) Dialect(d dialect.SqlDialect) SqlCreateTableBuilder {
+func (b CreateTableBuilder) Dialect(d dialect.Dialect) CreateTableBuilder {
 	b.dialect = d
 	return b
 }
 
 // Table sets the target table name.
-func (b SqlCreateTableBuilder) Table(table string) SqlCreateTableBuilder {
+func (b CreateTableBuilder) Table(table string) CreateTableBuilder {
 	b.table = table
 	return b
 }
 
 // IfNotExists adds IF NOT EXISTS to the CREATE TABLE statement.
-func (b SqlCreateTableBuilder) IfNotExists() SqlCreateTableBuilder {
+func (b CreateTableBuilder) IfNotExists() CreateTableBuilder {
 	b.ifNotExists = true
 	return b
 }
@@ -143,7 +143,7 @@ func (b SqlCreateTableBuilder) IfNotExists() SqlCreateTableBuilder {
 //	.Options("STRICT, WITHOUT ROWID")  // SQLite:     ...) STRICT, WITHOUT ROWID
 //	.Options("ENGINE=InnoDB")          // MySQL:      ...) ENGINE=InnoDB
 //	.Options("WITH (fillfactor = 70)") // PostgreSQL: ...) WITH (fillfactor = 70)
-func (b SqlCreateTableBuilder) Options(opts ...string) SqlCreateTableBuilder {
+func (b CreateTableBuilder) Options(opts ...string) CreateTableBuilder {
 	b.options = append(append([]string(nil), b.options...), opts...)
 	return b
 }
@@ -154,7 +154,7 @@ func (b SqlCreateTableBuilder) Options(opts ...string) SqlCreateTableBuilder {
 //	.Column("id",    "BIGINT",  "NOT NULL")
 //	.Column("score", "INTEGER", "NOT NULL", "DEFAULT 0")
 //	.Column("note",  "TEXT")
-func (b SqlCreateTableBuilder) Column(name, typ string, constraints ...string) SqlCreateTableBuilder {
+func (b CreateTableBuilder) Column(name, typ string, constraints ...string) CreateTableBuilder {
 	b.columns = append(append([]columnDef(nil), b.columns...), columnDef{Name: name, Typ: typ, Constraints: slices.Clone(constraints)})
 	return b
 }
@@ -163,9 +163,9 @@ func (b SqlCreateTableBuilder) Column(name, typ string, constraints ...string) S
 //
 //	.PrimaryKey("id")                  →  PRIMARY KEY ("id")
 //	.PrimaryKey("order_id", "item_id") →  PRIMARY KEY ("order_id", "item_id")
-func (b SqlCreateTableBuilder) PrimaryKey(cols ...string) SqlCreateTableBuilder {
+func (b CreateTableBuilder) PrimaryKey(cols ...string) CreateTableBuilder {
 	cols = slices.Clone(cols)
-	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.SqlDialect) {
+	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.Dialect) {
 		buf.WriteString("PRIMARY KEY (")
 		quoteIdentifiers(buf, d, cols)
 		buf.WriteByte(')')
@@ -177,9 +177,9 @@ func (b SqlCreateTableBuilder) PrimaryKey(cols ...string) SqlCreateTableBuilder 
 //
 //	.Unique("email")          →  UNIQUE ("email")
 //	.Unique("first", "last")  →  UNIQUE ("first", "last")
-func (b SqlCreateTableBuilder) Unique(cols ...string) SqlCreateTableBuilder {
+func (b CreateTableBuilder) Unique(cols ...string) CreateTableBuilder {
 	cols = slices.Clone(cols)
-	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.SqlDialect) {
+	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.Dialect) {
 		buf.WriteString("UNIQUE (")
 		quoteIdentifiers(buf, d, cols)
 		buf.WriteByte(')')
@@ -195,9 +195,9 @@ func (b SqlCreateTableBuilder) Unique(cols ...string) SqlCreateTableBuilder {
 //
 //	.ForeignKey([]string{"user_id"}, "users", []string{"id"}, "ON DELETE CASCADE", "ON UPDATE RESTRICT")
 //	  →  FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
-func (b SqlCreateTableBuilder) ForeignKey(cols []string, refTable string, refCols []string, onActions ...string) SqlCreateTableBuilder {
+func (b CreateTableBuilder) ForeignKey(cols []string, refTable string, refCols []string, onActions ...string) CreateTableBuilder {
 	cols, refCols, onActions = slices.Clone(cols), slices.Clone(refCols), slices.Clone(onActions)
-	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.SqlDialect) {
+	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.Dialect) {
 		buf.WriteString("FOREIGN KEY (")
 		quoteIdentifiers(buf, d, cols)
 		buf.WriteString(") REFERENCES ")
@@ -221,8 +221,8 @@ func (b SqlCreateTableBuilder) ForeignKey(cols []string, refTable string, refCol
 //
 //	.Check(syntax.And(syntax.Gt("price", 0), syntax.IsNotNull("name")))
 //	  →  CHECK ("price" > 0 AND "name" IS NOT NULL)
-func (b SqlCreateTableBuilder) Check(expr syntax.SqlFragment) SqlCreateTableBuilder {
-	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b CreateTableBuilder) Check(expr syntax.SQLFragment) CreateTableBuilder {
+	b.tableConstraints = append(append([]constraintFunc(nil), b.tableConstraints...), func(buf *bytes.Buffer, d dialect.Dialect) {
 		buf.WriteString("CHECK (")
 		expr.AppendSQL(buf, d)
 		buf.WriteByte(')')

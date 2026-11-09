@@ -11,7 +11,7 @@ func main() {
 	sql1 := sqbl.InsertInto("users").
 		Columns("name", "email").
 		Values(sqbl.P(1), sqbl.P(2)).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql1)
 
 	// Multiple rows in a single INSERT
@@ -20,7 +20,7 @@ func main() {
 		Columns("name", "email").
 		Values(sqbl.P(1), sqbl.P(2)).
 		Values(sqbl.P(3), sqbl.P(4)).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql2)
 
 	// INSERT ... RETURNING to get the generated id
@@ -29,7 +29,7 @@ func main() {
 		Columns("name", "email").
 		Values(sqbl.P(1), sqbl.P(2)).
 		Returning("id", "created_at").
-		ToSql()
+		ToSQL()
 	fmt.Println(sql3)
 
 	// Upsert: ON CONFLICT DO NOTHING
@@ -38,7 +38,7 @@ func main() {
 		Columns("name").
 		Values(sqbl.P(1)).
 		OnConflictDoNothing().
-		ToSql()
+		ToSQL()
 	fmt.Println(sql4)
 
 	// Upsert: ON CONFLICT DO UPDATE (update on duplicate key)
@@ -48,7 +48,7 @@ func main() {
 		Columns("user_id", "key", "value").
 		Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
 		OnConflict("user_id", "key").DoUpdateSet("value", "excluded.value").
-		ToSql()
+		ToSQL()
 	fmt.Println(sql5)
 
 	// Upsert: conditional DO UPDATE (overwrite only with a newer version)
@@ -62,7 +62,7 @@ func main() {
 		DoUpdateSet("name", "excluded.name").
 		DoUpdateSet("version", "excluded.version").
 		DoUpdateWhere(sqbl.Lt("users.version", "excluded.version")).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql6)
 
 	// Upsert: target a partial unique index
@@ -74,6 +74,6 @@ func main() {
 		OnConflict("email").
 		OnConflictWhere(sqbl.Eq("active", 1)).
 		DoUpdate(`"name" = excluded."name"`).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql7)
 }

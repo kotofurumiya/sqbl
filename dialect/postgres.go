@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-// PostgresDialect implements the Dialect interface for PostgreSQL.
-type PostgresDialect struct{}
+// Postgres implements the Dialect interface for PostgreSQL.
+type Postgres struct{}
 
-var _ SqlDialect = &PostgresDialect{}
+var _ Dialect = &Postgres{}
 
 // Quote writes a single identifier part wrapped in double quotes into buf.
 // Any existing double-quote characters within the identifier are escaped by doubling.
@@ -18,7 +18,7 @@ var _ SqlDialect = &PostgresDialect{}
 //
 //	users      -> "users"
 //	my"table   -> "my""table"
-func (p *PostgresDialect) Quote(buf *bytes.Buffer, s string) {
+func (p *Postgres) Quote(buf *bytes.Buffer, s string) {
 	if strings.IndexByte(s, '"') < 0 {
 		buf.WriteByte('"')
 		buf.WriteString(s)
@@ -36,7 +36,7 @@ func (p *PostgresDialect) Quote(buf *bytes.Buffer, s string) {
 //	users          -> "users"
 //	public.users   -> "public"."users"
 //	db.sch.table   -> "db"."sch"."table"
-func (p *PostgresDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
+func (p *Postgres) QuoteIdentifier(buf *bytes.Buffer, name string) {
 	if strings.IndexByte(name, '.') < 0 {
 		p.Quote(buf, name)
 		return
@@ -45,7 +45,7 @@ func (p *PostgresDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
 }
 
 // PlaceholderPositional writes the positional bind parameter "?" into buf.
-func (p *PostgresDialect) PlaceholderPositional(buf *bytes.Buffer) {
+func (p *Postgres) PlaceholderPositional(buf *bytes.Buffer) {
 	buf.WriteByte('?')
 }
 
@@ -55,7 +55,7 @@ func (p *PostgresDialect) PlaceholderPositional(buf *bytes.Buffer) {
 // Examples:
 //
 //	1 -> $1, 2 -> $2
-func (p *PostgresDialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
+func (p *Postgres) PlaceholderIndexed(buf *bytes.Buffer, index int) {
 	buf.WriteByte('$')
 	buf.WriteString(strconv.Itoa(index))
 }
@@ -65,7 +65,7 @@ func (p *PostgresDialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
 // Examples:
 //
 //	true -> TRUE, false -> FALSE
-func (p *PostgresDialect) Bool(buf *bytes.Buffer, b bool) {
+func (p *Postgres) Bool(buf *bytes.Buffer, b bool) {
 	if b {
 		buf.WriteString("TRUE")
 	} else {

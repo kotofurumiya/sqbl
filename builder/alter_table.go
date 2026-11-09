@@ -14,7 +14,7 @@ type alterOp struct {
 	typ  string
 }
 
-// SqlAlterTableBuilder constructs an ALTER TABLE statement using a fluent method chain.
+// AlterTableBuilder constructs an ALTER TABLE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.AlterTable) to create an instance.
 //
 //	sqblpg.AlterTable("users").AddColumn("bio", "TEXT")
@@ -23,16 +23,16 @@ type alterOp struct {
 //
 // Note: SQLite supports ADD COLUMN since all versions, but DROP COLUMN and RENAME COLUMN
 // require SQLite 3.35.0+ (2021-03-12) and 3.25.0+ (2018-09-15) respectively.
-type SqlAlterTableBuilder struct {
-	dialect dialect.SqlDialect
+type AlterTableBuilder struct {
+	dialect dialect.Dialect
 	table   string
 	op      alterOp
 }
 
-var _ SqlBuilder = SqlAlterTableBuilder{}
+var _ Statement = AlterTableBuilder{}
 
-// ToSql renders the ALTER TABLE statement with a trailing semicolon.
-func (b SqlAlterTableBuilder) ToSql() string {
+// ToSQL renders the ALTER TABLE statement with a trailing semicolon.
+func (b AlterTableBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -42,8 +42,8 @@ func (b SqlAlterTableBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the ALTER TABLE statement using the given dialect, without a trailing semicolon.
-func (b SqlAlterTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the ALTER TABLE statement using the given dialect, without a trailing semicolon.
+func (b AlterTableBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -52,7 +52,7 @@ func (b SqlAlterTableBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-func (b SqlAlterTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b AlterTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	if b.table == "" {
 		buf.WriteString("ALTER TABLE")
 		return
@@ -84,13 +84,13 @@ func (b SqlAlterTableBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect)
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlAlterTableBuilder) Dialect(d dialect.SqlDialect) SqlAlterTableBuilder {
+func (b AlterTableBuilder) Dialect(d dialect.Dialect) AlterTableBuilder {
 	b.dialect = d
 	return b
 }
 
 // Table sets the target table name.
-func (b SqlAlterTableBuilder) Table(table string) SqlAlterTableBuilder {
+func (b AlterTableBuilder) Table(table string) AlterTableBuilder {
 	b.table = table
 	return b
 }
@@ -99,7 +99,7 @@ func (b SqlAlterTableBuilder) Table(table string) SqlAlterTableBuilder {
 //
 //	sqblpg.AlterTable("users").AddColumn("bio", "TEXT")
 //	// ALTER TABLE "users" ADD COLUMN "bio" TEXT
-func (b SqlAlterTableBuilder) AddColumn(name, typ string) SqlAlterTableBuilder {
+func (b AlterTableBuilder) AddColumn(name, typ string) AlterTableBuilder {
 	b.op = alterOp{kind: "ADD_COLUMN", from: name, typ: typ}
 	return b
 }
@@ -109,7 +109,7 @@ func (b SqlAlterTableBuilder) AddColumn(name, typ string) SqlAlterTableBuilder {
 //
 //	sqblpg.AlterTable("users").DropColumn("legacy_col")
 //	// ALTER TABLE "users" DROP COLUMN "legacy_col"
-func (b SqlAlterTableBuilder) DropColumn(name string) SqlAlterTableBuilder {
+func (b AlterTableBuilder) DropColumn(name string) AlterTableBuilder {
 	b.op = alterOp{kind: "DROP_COLUMN", from: name}
 	return b
 }
@@ -119,7 +119,7 @@ func (b SqlAlterTableBuilder) DropColumn(name string) SqlAlterTableBuilder {
 //
 //	sqblpg.AlterTable("users").RenameColumn("fullname", "name")
 //	// ALTER TABLE "users" RENAME COLUMN "fullname" TO "name"
-func (b SqlAlterTableBuilder) RenameColumn(from, to string) SqlAlterTableBuilder {
+func (b AlterTableBuilder) RenameColumn(from, to string) AlterTableBuilder {
 	b.op = alterOp{kind: "RENAME_COLUMN", from: from, to: to}
 	return b
 }
@@ -128,7 +128,7 @@ func (b SqlAlterTableBuilder) RenameColumn(from, to string) SqlAlterTableBuilder
 //
 //	sqblpg.AlterTable("users").RenameTable("members")
 //	// ALTER TABLE "users" RENAME TO "members"
-func (b SqlAlterTableBuilder) RenameTable(to string) SqlAlterTableBuilder {
+func (b AlterTableBuilder) RenameTable(to string) AlterTableBuilder {
 	b.op = alterOp{kind: "RENAME_TABLE", to: to}
 	return b
 }

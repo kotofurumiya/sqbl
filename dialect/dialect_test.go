@@ -15,22 +15,22 @@ type perDialect struct {
 func TestDialects(t *testing.T) {
 	t.Parallel()
 
-	quote := func(s string) func(*bytes.Buffer, dialect.SqlDialect) {
-		return func(buf *bytes.Buffer, d dialect.SqlDialect) { d.Quote(buf, s) }
+	quote := func(s string) func(*bytes.Buffer, dialect.Dialect) {
+		return func(buf *bytes.Buffer, d dialect.Dialect) { d.Quote(buf, s) }
 	}
-	quoteIdent := func(s string) func(*bytes.Buffer, dialect.SqlDialect) {
-		return func(buf *bytes.Buffer, d dialect.SqlDialect) { d.QuoteIdentifier(buf, s) }
+	quoteIdent := func(s string) func(*bytes.Buffer, dialect.Dialect) {
+		return func(buf *bytes.Buffer, d dialect.Dialect) { d.QuoteIdentifier(buf, s) }
 	}
-	indexed := func(i int) func(*bytes.Buffer, dialect.SqlDialect) {
-		return func(buf *bytes.Buffer, d dialect.SqlDialect) { d.PlaceholderIndexed(buf, i) }
+	indexed := func(i int) func(*bytes.Buffer, dialect.Dialect) {
+		return func(buf *bytes.Buffer, d dialect.Dialect) { d.PlaceholderIndexed(buf, i) }
 	}
-	boolean := func(b bool) func(*bytes.Buffer, dialect.SqlDialect) {
-		return func(buf *bytes.Buffer, d dialect.SqlDialect) { d.Bool(buf, b) }
+	boolean := func(b bool) func(*bytes.Buffer, dialect.Dialect) {
+		return func(buf *bytes.Buffer, d dialect.Dialect) { d.Bool(buf, b) }
 	}
 
 	tests := []struct {
 		name   string
-		render func(*bytes.Buffer, dialect.SqlDialect)
+		render func(*bytes.Buffer, dialect.Dialect)
 		want   perDialect
 	}{
 		{
@@ -83,7 +83,7 @@ func TestDialects(t *testing.T) {
 		},
 		{
 			name:   "PlaceholderPositional",
-			render: func(buf *bytes.Buffer, d dialect.SqlDialect) { d.PlaceholderPositional(buf) },
+			render: func(buf *bytes.Buffer, d dialect.Dialect) { d.PlaceholderPositional(buf) },
 			want:   perDialect{"?", "?", "?", "?"},
 		},
 		{
@@ -113,13 +113,13 @@ func TestDialects(t *testing.T) {
 			t.Parallel()
 			for _, c := range []struct {
 				name string
-				d    dialect.SqlDialect
+				d    dialect.Dialect
 				want string
 			}{
-				{"postgres", &dialect.PostgresDialect{}, tt.want.postgres},
-				{"mysql", &dialect.MysqlDialect{}, tt.want.mysql},
-				{"sqlite", &dialect.SqliteDialect{}, tt.want.sqlite},
-				{"simple", &dialect.SimpleDialect{}, tt.want.simple},
+				{"postgres", &dialect.Postgres{}, tt.want.postgres},
+				{"mysql", &dialect.MySQL{}, tt.want.mysql},
+				{"sqlite", &dialect.SQLite{}, tt.want.sqlite},
+				{"simple", &dialect.Simple{}, tt.want.simple},
 			} {
 				var buf bytes.Buffer
 				tt.render(&buf, c.d)

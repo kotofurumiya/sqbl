@@ -1,4 +1,4 @@
-// Package syntax defines the low-level AST node types used by SqlSelectBuilder
+// Package syntax defines the low-level AST node types used by SelectBuilder
 // to represent SQL clauses, expressions, and fragments.
 package syntax
 
@@ -7,7 +7,7 @@ package syntax
 // When Lateral is true, the LATERAL keyword is inserted after JOIN.
 type JoinClause struct {
 	Kind    string
-	Table   SqlFragment
-	On      SqlFragment
+	Table   SQLFragment
+	On      SQLFragment
 	Lateral bool
 }

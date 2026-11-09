@@ -27,14 +27,14 @@ func seedUsersAndOrders(t *testing.T, conn shared.Conn) {
 			Values(sqbl.P(1), sqbl.P(2)).
 			Values(sqbl.P(3), sqbl.P(4)).
 			Values(sqbl.P(5), sqbl.P(6)).
-			ToSql(),
+			ToSQL(),
 		1, "alice", 2, "bob", 3, "carol")
 	shared.MustExec(t, conn,
 		sqbl.InsertInto("orders").Columns("id", "user_id", "amount").
 			Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
 			Values(sqbl.P(4), sqbl.P(5), sqbl.P(6)).
 			Values(sqbl.P(7), sqbl.P(8), sqbl.P(9)).
-			ToSql(),
+			ToSQL(),
 		1, 1, 100, 2, 1, 300, 3, 2, 200)
 }
 
@@ -60,7 +60,7 @@ func TestDistinctOn(t *testing.T) {
 		DistinctOn("o.user_id").
 		Select("u.name", "o.amount").
 		OrderBy(sqbl.Asc("o.user_id"), sqbl.Desc("o.amount")).
-		ToSql()
+		ToSQL()
 	shared.AssertSlice(t, shared.QueryRows(t, conn, scanNameAmount, sql),
 		[]nameAmount{{"alice", 300}, {"bob", 200}})
 }
@@ -71,8 +71,8 @@ func TestILike(t *testing.T) {
 	conn := openConn(t)
 	seedUsersAndOrders(t, conn)
 
-	query := func(cond syntax.SqlFragment) []string {
-		return shared.QueryColumn[string](t, conn, sqbl.From("users").Select("name").Where(cond).ToSql(), "ALI%")
+	query := func(cond syntax.SQLFragment) []string {
+		return shared.QueryColumn[string](t, conn, sqbl.From("users").Select("name").Where(cond).ToSQL(), "ALI%")
 	}
 	shared.AssertSlice(t, query(sqbl.Like("name", sqbl.P(1))), nil)
 	shared.AssertSlice(t, query(sqbl.ILike("name", sqbl.P(1))), []string{"alice"})
@@ -91,7 +91,7 @@ func TestUnnestArrayParameter(t *testing.T) {
 		Join(ids, sqbl.Eq("users.id", "ids.id")).
 		Select("users.name").
 		OrderBy(sqbl.Asc("users.id")).
-		ToSql()
+		ToSQL()
 	shared.AssertSlice(t, shared.QueryColumn[string](t, conn, sql, []int64{1, 3}), []string{"alice", "carol"})
 }
 
@@ -112,12 +112,12 @@ func TestLateralJoins(t *testing.T) {
 		OrderBy(sqbl.Asc("u.id"))
 
 	t.Run("Left", func(t *testing.T) {
-		sql := base.LeftLateralJoin(latest, "latest").ToSql()
+		sql := base.LeftLateralJoin(latest, "latest").ToSQL()
 		shared.AssertSlice(t, shared.QueryRows(t, conn, scanNameAmount, sql),
 			[]nameAmount{{"alice", 300}, {"bob", 200}, {"carol", 0}})
 	})
 	t.Run("Cross", func(t *testing.T) {
-		sql := base.CrossLateralJoin(latest, "latest").ToSql()
+		sql := base.CrossLateralJoin(latest, "latest").ToSQL()
 		shared.AssertSlice(t, shared.QueryRows(t, conn, scanNameAmount, sql),
 			[]nameAmount{{"alice", 300}, {"bob", 200}})
 	})
@@ -141,7 +141,7 @@ func TestRowLocking(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = tx1.Rollback(context.Background()) })
 	var locked int
-	if err := tx1.QueryRow(t.Context(), next.ForUpdate().ToSql()).Scan(&locked); err != nil || locked != 1 {
+	if err := tx1.QueryRow(t.Context(), next.ForUpdate().ToSQL()).Scan(&locked); err != nil || locked != 1 {
 		t.Fatalf("worker 1 locked (%d, %v); want job 1", locked, err)
 	}
 
@@ -151,13 +151,13 @@ func TestRowLocking(t *testing.T) {
 		wantID  int
 		wantErr bool
 	}{
-		{"SkipLocked passes over the locked row", next.ForUpdate().SkipLocked().ToSql(), 2, false},
-		{"Nowait fails instead of waiting", next.ForUpdate().Nowait().ToSql(), 0, true},
+		{"SkipLocked passes over the locked row", next.ForUpdate().SkipLocked().ToSQL(), 2, false},
+		{"Nowait fails instead of waiting", next.ForUpdate().Nowait().ToSQL(), 0, true},
 		// FOR UPDATE conflicts with every row-lock mode, so each mode fails
 		// under NOWAIT only if it really tried to lock the row.
-		{"ForShare conflicts with ForUpdate", next.ForShare().Nowait().ToSql(), 0, true},
-		{"ForNoKeyUpdate conflicts with ForUpdate", next.ForNoKeyUpdate().Nowait().ToSql(), 0, true},
-		{"ForKeyShare conflicts with ForUpdate", next.ForKeyShare().Nowait().ToSql(), 0, true},
+		{"ForShare conflicts with ForUpdate", next.ForShare().Nowait().ToSQL(), 0, true},
+		{"ForNoKeyUpdate conflicts with ForUpdate", next.ForNoKeyUpdate().Nowait().ToSQL(), 0, true},
+		{"ForKeyShare conflicts with ForUpdate", next.ForKeyShare().Nowait().ToSQL(), 0, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -182,7 +182,7 @@ func TestCreateIndexUsing(t *testing.T) {
 	shared.UseTables(t, conn, "it_idx_using")
 	shared.MustExec(t, conn, `CREATE TABLE it_idx_using (id BIGINT PRIMARY KEY, email TEXT NOT NULL)`)
 	shared.MustExec(t, conn,
-		sqbl.CreateIndex("it_idx_using_email").On("it_idx_using").Columns("email").Using("hash").ToSql())
+		sqbl.CreateIndex("it_idx_using_email").On("it_idx_using").Columns("email").Using("hash").ToSQL())
 
 	defs := shared.QueryColumn[string](t, conn,
 		`SELECT indexdef FROM pg_indexes WHERE indexname = 'it_idx_using_email'`)
@@ -200,8 +200,8 @@ func TestDropTableCascade(t *testing.T) {
 	shared.MustExec(t, conn, `CREATE TABLE it_cascade_parent (id BIGINT PRIMARY KEY)`)
 	shared.MustExec(t, conn, `CREATE TABLE it_cascade_child (parent_id BIGINT REFERENCES it_cascade_parent (id))`)
 
-	shared.MustFail(t, conn, "referenced table without CASCADE", sqbl.DropTable("it_cascade_parent").ToSql())
-	shared.MustExec(t, conn, sqbl.DropTable("it_cascade_parent").Cascade().ToSql())
+	shared.MustFail(t, conn, "referenced table without CASCADE", sqbl.DropTable("it_cascade_parent").ToSQL())
+	shared.MustExec(t, conn, sqbl.DropTable("it_cascade_parent").Cascade().ToSQL())
 	shared.MustExec(t, conn, `INSERT INTO it_cascade_child (parent_id) VALUES (999)`)
 }
 
@@ -214,9 +214,9 @@ func TestCreateAndDropDatabase(t *testing.T) {
 		return shared.QueryColumn[int](t, conn, `SELECT COUNT(*) FROM pg_database WHERE datname = $1`, name)
 	}
 
-	shared.MustExec(t, conn, sqbl.DropDatabase(name).IfExists().ToSql())
-	shared.MustExec(t, conn, sqbl.CreateDatabase(name).ToSql())
+	shared.MustExec(t, conn, sqbl.DropDatabase(name).IfExists().ToSQL())
+	shared.MustExec(t, conn, sqbl.CreateDatabase(name).ToSQL())
 	shared.AssertSlice(t, count(), []int{1})
-	shared.MustExec(t, conn, sqbl.DropDatabase(name).IfExists().Force().ToSql())
+	shared.MustExec(t, conn, sqbl.DropDatabase(name).IfExists().Force().ToSQL())
 	shared.AssertSlice(t, count(), []int{0})
 }

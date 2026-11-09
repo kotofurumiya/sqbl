@@ -1,14 +1,14 @@
 # Custom Dialect
 
-sqbl supports any SQL database by implementing the `SqlDialect` interface. This document walks through the interface contract and a complete implementation example.
+sqbl supports any SQL database by implementing the `Dialect` interface. This document walks through the interface contract and a complete implementation example.
 
 ---
 
-## The SqlDialect interface
+## The Dialect interface
 
 ```go
 // dialect/dialect.go
-type SqlDialect interface {
+type Dialect interface {
     Quote(buf *bytes.Buffer, s string)
     QuoteIdentifier(buf *bytes.Buffer, name string)
     PlaceholderPositional(buf *bytes.Buffer)
@@ -66,7 +66,7 @@ import (
 
 type DuckDBDialect struct{}
 
-var _ dialect.SqlDialect = &DuckDBDialect{}
+var _ dialect.Dialect = &DuckDBDialect{}
 
 func (d *DuckDBDialect) Quote(buf *bytes.Buffer, s string) {
     dialect.WriteQuotedPart(buf, s, '"')
@@ -116,56 +116,56 @@ import (
     "github.com/kotofurumiya/sqbl/dialect"
 )
 
-func newSelectBuilder() *builder.SqlSelectBuilder {
-    b := &builder.SqlSelectBuilder{}
+func newSelectBuilder() *builder.SelectBuilder {
+    b := &builder.SelectBuilder{}
     return b.Dialect(&DuckDBDialect{})
 }
 
-func From(table any) *builder.SqlSelectBuilder {
+func From(table any) *builder.SelectBuilder {
     return newSelectBuilder().From(table)
 }
 
-func Select(columns ...any) *builder.SqlSelectBuilder {
+func Select(columns ...any) *builder.SelectBuilder {
     return newSelectBuilder().Select(columns...)
 }
 
-func InsertInto(table string) *builder.SqlInsertBuilder {
-    b := &builder.SqlInsertBuilder{}
+func InsertInto(table string) *builder.InsertBuilder {
+    b := &builder.InsertBuilder{}
     return b.Dialect(&DuckDBDialect{}).Into(table)
 }
 
-func Update(table string) *builder.SqlUpdateBuilder {
-    b := &builder.SqlUpdateBuilder{}
+func Update(table string) *builder.UpdateBuilder {
+    b := &builder.UpdateBuilder{}
     return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 
-func DeleteFrom(table string) *builder.SqlDeleteBuilder {
-    b := &builder.SqlDeleteBuilder{}
+func DeleteFrom(table string) *builder.DeleteBuilder {
+    b := &builder.DeleteBuilder{}
     return b.Dialect(&DuckDBDialect{}).From(table)
 }
 
-func CreateTable(table string) *builder.SqlCreateTableBuilder {
-    b := &builder.SqlCreateTableBuilder{}
+func CreateTable(table string) *builder.CreateTableBuilder {
+    b := &builder.CreateTableBuilder{}
     return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 
-func CreateIndex(name string) *builder.SqlCreateIndexBuilder {
-    b := &builder.SqlCreateIndexBuilder{}
+func CreateIndex(name string) *builder.CreateIndexBuilder {
+    b := &builder.CreateIndexBuilder{}
     return b.Dialect(&DuckDBDialect{}).Name(name)
 }
 
-func DropTable(table string) *builder.SqlDropTableBuilder {
-    b := &builder.SqlDropTableBuilder{}
+func DropTable(table string) *builder.DropTableBuilder {
+    b := &builder.DropTableBuilder{}
     return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 
-func DropIndex(name string) *builder.SqlDropIndexBuilder {
-    b := &builder.SqlDropIndexBuilder{}
+func DropIndex(name string) *builder.DropIndexBuilder {
+    b := &builder.DropIndexBuilder{}
     return b.Dialect(&DuckDBDialect{}).Name(name)
 }
 
-func AlterTable(table string) *builder.SqlAlterTableBuilder {
-    b := &builder.SqlAlterTableBuilder{}
+func AlterTable(table string) *builder.AlterTableBuilder {
+    b := &builder.AlterTableBuilder{}
     return b.Dialect(&DuckDBDialect{}).Table(table)
 }
 ```
@@ -186,9 +186,9 @@ func Lt(left any, right any) syntax.ComparisonExpr             { return syntax.L
 func Lte(left any, right any) syntax.ComparisonExpr            { return syntax.Lte(left, right) }
 func Gt(left any, right any) syntax.ComparisonExpr             { return syntax.Gt(left, right) }
 func Gte(left any, right any) syntax.ComparisonExpr            { return syntax.Gte(left, right) }
-func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr       { return syntax.And(exprs...) }
-func Or(exprs ...syntax.SqlFragment) syntax.LogicalExpr        { return syntax.Or(exprs...) }
-func Not(expr syntax.SqlFragment) syntax.NotExpr               { return syntax.Not(expr) }
+func And(exprs ...syntax.SQLFragment) syntax.LogicalExpr       { return syntax.And(exprs...) }
+func Or(exprs ...syntax.SQLFragment) syntax.LogicalExpr        { return syntax.Or(exprs...) }
+func Not(expr syntax.SQLFragment) syntax.NotExpr               { return syntax.Not(expr) }
 func In(left any, values ...any) syntax.InExpr                 { return syntax.In(left, values...) }
 func NotIn(left any, values ...any) syntax.InExpr              { return syntax.NotIn(left, values...) }
 func IsNull(col any) syntax.NullExpr                           { return syntax.IsNull(col) }
@@ -198,7 +198,7 @@ func Like(left any, pattern string) syntax.ComparisonExpr      { return syntax.L
 func Asc(col string) syntax.Order                              { return syntax.Asc(col) }
 func Desc(col string) syntax.Order                             { return syntax.Desc(col) }
 func P(args ...any) syntax.Parameter                           { return syntax.P(args...) }
-func Fn(name string, args ...any) syntax.SqlFn                 { return syntax.Fn(name, args...) }
+func Fn(name string, args ...any) syntax.FnExpr                 { return syntax.Fn(name, args...) }
 func Over(expr any) syntax.WindowExpr                          { return syntax.Over(expr) }
 ```
 
@@ -206,7 +206,7 @@ func Over(expr any) syntax.WindowExpr                          { return syntax.O
 
 ## Using a custom dialect without a convenience package
 
-If you prefer not to create a separate package, you can set the dialect directly on the builder using `builder.SqlSelectBuilder.Dialect`:
+If you prefer not to create a separate package, you can set the dialect directly on the builder using `builder.SelectBuilder.Dialect`:
 
 ```go
 import (
@@ -214,24 +214,24 @@ import (
     "github.com/kotofurumiya/sqbl/syntax"
 )
 
-b := (&builder.SqlSelectBuilder{}).
+b := (&builder.SelectBuilder{}).
     Dialect(&DuckDBDialect{}).
     From("users").
     Select("id", "name").
     Where(syntax.Eq("active", true))
 
-sql := b.ToSql()
+sql := b.ToSQL()
 ```
 
 ---
 
 ## What the dialect does NOT control
 
-The dialect is intentionally limited to lexical differences. The following are always handled by `builder.SqlSelectBuilder` regardless of dialect:
+The dialect is intentionally limited to lexical differences. The following are always handled by `builder.SelectBuilder` regardless of dialect:
 
 - The order of SQL clauses (WITH → SELECT → FROM → JOIN → WHERE → ...)
 - Keywords: `SELECT`, `FROM`, `WHERE`, `JOIN ON`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`, `UNION`, `INTERSECT`, `EXCEPT`, `FOR UPDATE`, etc.
 - Parenthesization of subqueries
-- The trailing semicolon added by `ToSql()`
+- The trailing semicolon added by `ToSQL()`
 
-If you need to generate SQL that differs structurally from what `SqlSelectBuilder` produces, that is beyond the scope of the dialect interface and would require changes to `builder`.
+If you need to generate SQL that differs structurally from what `SelectBuilder` produces, that is beyond the scope of the dialect interface and would require changes to `builder`.

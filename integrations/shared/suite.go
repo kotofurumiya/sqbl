@@ -41,15 +41,15 @@ type Conn interface {
 // that decide which scenarios run. sqbl renders whatever it is asked for, so
 // scenarios consult these flags instead of relying on the builder to refuse.
 type Suite struct {
-	From        func(table any) builder.SqlSelectBuilder
-	InsertInto  func(table string) builder.SqlInsertBuilder
-	Update      func(table string) builder.SqlUpdateBuilder
-	DeleteFrom  func(table string) builder.SqlDeleteBuilder
-	CreateTable func(table string) builder.SqlCreateTableBuilder
-	CreateIndex func(name string) builder.SqlCreateIndexBuilder
-	DropTable   func(table string) builder.SqlDropTableBuilder
-	DropIndex   func(name string) builder.SqlDropIndexBuilder
-	AlterTable  func(table string) builder.SqlAlterTableBuilder
+	From        func(table any) builder.SelectBuilder
+	InsertInto  func(table string) builder.InsertBuilder
+	Update      func(table string) builder.UpdateBuilder
+	DeleteFrom  func(table string) builder.DeleteBuilder
+	CreateTable func(table string) builder.CreateTableBuilder
+	CreateIndex func(name string) builder.CreateIndexBuilder
+	DropTable   func(table string) builder.DropTableBuilder
+	DropIndex   func(name string) builder.DropIndexBuilder
+	AlterTable  func(table string) builder.AlterTableBuilder
 
 	// DropIndexOnTable is set when DROP INDEX must name its table (MySQL).
 	DropIndexOnTable bool

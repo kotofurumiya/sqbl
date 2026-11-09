@@ -15,35 +15,35 @@ type setClause struct {
 	Val any
 }
 
-var _ syntax.SqlFragment = setClause{}
+var _ syntax.SQLFragment = setClause{}
 
-// AppendSQL implements syntax.SqlFragment, writing "col" = val into buf.
-func (s setClause) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements syntax.SQLFragment, writing "col" = val into buf.
+func (s setClause) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	d.QuoteIdentifier(buf, s.Col)
 	buf.WriteString(" = ")
 	syntax.AppendValue(buf, d, s.Val)
 }
 
-// SqlUpdateBuilder constructs a SQL UPDATE statement using a fluent method chain.
+// UpdateBuilder constructs a SQL UPDATE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.Update) to create an instance.
 //
 //	q := sqblpg.Update("users").
 //	    Set("name", sqbl.P(1)).
 //	    Set("email", sqbl.P(2)).
 //	    Where(sqblpg.Eq("id", sqbl.P(3)))
-//	sql := q.ToSql()
-type SqlUpdateBuilder struct {
-	dialect   dialect.SqlDialect
+//	sql := q.ToSQL()
+type UpdateBuilder struct {
+	dialect   dialect.Dialect
 	table     string
 	sets      []setClause
-	where     syntax.SqlFragment
+	where     syntax.SQLFragment
 	returning []string
 }
 
-var _ SqlBuilder = SqlUpdateBuilder{}
+var _ Statement = UpdateBuilder{}
 
-// ToSql renders the UPDATE statement with a trailing semicolon.
-func (b SqlUpdateBuilder) ToSql() string {
+// ToSQL renders the UPDATE statement with a trailing semicolon.
+func (b UpdateBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -53,8 +53,8 @@ func (b SqlUpdateBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the UPDATE statement using the given dialect, without a trailing semicolon.
-func (b SqlUpdateBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the UPDATE statement using the given dialect, without a trailing semicolon.
+func (b UpdateBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -63,7 +63,7 @@ func (b SqlUpdateBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-func (b SqlUpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b UpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// UPDATE table
 	buf.WriteString("UPDATE")
 	if b.table != "" {
@@ -101,7 +101,7 @@ func (b SqlUpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlUpdateBuilder) Dialect(d dialect.SqlDialect) SqlUpdateBuilder {
+func (b UpdateBuilder) Dialect(d dialect.Dialect) UpdateBuilder {
 	b.dialect = d
 	return b
 }
@@ -109,7 +109,7 @@ func (b SqlUpdateBuilder) Dialect(d dialect.SqlDialect) SqlUpdateBuilder {
 // Table sets the target table for the UPDATE statement.
 //
 //	b.Table("users")
-func (b SqlUpdateBuilder) Table(table string) SqlUpdateBuilder {
+func (b UpdateBuilder) Table(table string) UpdateBuilder {
 	b.table = table
 	return b
 }
@@ -122,7 +122,7 @@ func (b SqlUpdateBuilder) Table(table string) SqlUpdateBuilder {
 //	b.Set("name", sqbl.P(1)).Set("email", sqbl.P(2))
 //	b.Set("count", sqbl.Raw(`"count" + 1`))
 //	b.Set("deleted_at", nil) // "deleted_at" = NULL
-func (b SqlUpdateBuilder) Set(col string, val any) SqlUpdateBuilder {
+func (b UpdateBuilder) Set(col string, val any) UpdateBuilder {
 	b.sets = append(append([]setClause(nil), b.sets...), setClause{Col: col, Val: val})
 	return b
 }
@@ -130,7 +130,7 @@ func (b SqlUpdateBuilder) Set(col string, val any) SqlUpdateBuilder {
 // Where sets the WHERE condition.
 //
 //	b.Where(sqblpg.Eq("id", sqbl.P(1)))
-func (b SqlUpdateBuilder) Where(expr syntax.SqlFragment) SqlUpdateBuilder {
+func (b UpdateBuilder) Where(expr syntax.SQLFragment) UpdateBuilder {
 	b.where = expr
 	return b
 }
@@ -139,7 +139,7 @@ func (b SqlUpdateBuilder) Where(expr syntax.SqlFragment) SqlUpdateBuilder {
 // The specified columns are returned for each updated row.
 //
 //	sqblpg.Update("users").Set("name", sqbl.P(1)).Where(...).Returning("id", "name")
-func (b SqlUpdateBuilder) Returning(cols ...string) SqlUpdateBuilder {
+func (b UpdateBuilder) Returning(cols ...string) UpdateBuilder {
 	b.returning = slices.Clone(cols)
 	return b
 }

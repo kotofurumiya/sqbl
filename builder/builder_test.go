@@ -10,40 +10,40 @@ import (
 
 // Builder tests render with PostgreSQL so that expected SQL reads like real SQL.
 // How each dialect quotes and numbers placeholders is covered in dialect/.
-var pg = &dialect.PostgresDialect{}
+var pg = &dialect.Postgres{}
 
-func newSelect() builder.SqlSelectBuilder { return (builder.SqlSelectBuilder{}).Dialect(pg) }
-func newInsert() builder.SqlInsertBuilder { return (builder.SqlInsertBuilder{}).Dialect(pg) }
-func newUpdate() builder.SqlUpdateBuilder { return (builder.SqlUpdateBuilder{}).Dialect(pg) }
-func newDelete() builder.SqlDeleteBuilder { return (builder.SqlDeleteBuilder{}).Dialect(pg) }
+func newSelect() builder.SelectBuilder { return (builder.SelectBuilder{}).Dialect(pg) }
+func newInsert() builder.InsertBuilder { return (builder.InsertBuilder{}).Dialect(pg) }
+func newUpdate() builder.UpdateBuilder { return (builder.UpdateBuilder{}).Dialect(pg) }
+func newDelete() builder.DeleteBuilder { return (builder.DeleteBuilder{}).Dialect(pg) }
 
-func newCreateTable() builder.SqlCreateTableBuilder {
-	return (builder.SqlCreateTableBuilder{}).Dialect(pg)
+func newCreateTable() builder.CreateTableBuilder {
+	return (builder.CreateTableBuilder{}).Dialect(pg)
 }
 
-func newCreateIndex() builder.SqlCreateIndexBuilder {
-	return (builder.SqlCreateIndexBuilder{}).Dialect(pg)
+func newCreateIndex() builder.CreateIndexBuilder {
+	return (builder.CreateIndexBuilder{}).Dialect(pg)
 }
 
-func newAlterTable() builder.SqlAlterTableBuilder {
-	return (builder.SqlAlterTableBuilder{}).Dialect(pg)
+func newAlterTable() builder.AlterTableBuilder {
+	return (builder.AlterTableBuilder{}).Dialect(pg)
 }
 
-func newDropTable() builder.SqlDropTableBuilder { return (builder.SqlDropTableBuilder{}).Dialect(pg) }
-func newDropIndex() builder.SqlDropIndexBuilder { return (builder.SqlDropIndexBuilder{}).Dialect(pg) }
+func newDropTable() builder.DropTableBuilder { return (builder.DropTableBuilder{}).Dialect(pg) }
+func newDropIndex() builder.DropIndexBuilder { return (builder.DropIndexBuilder{}).Dialect(pg) }
 
-func newCreateDatabase() builder.SqlCreateDatabaseBuilder {
-	return (builder.SqlCreateDatabaseBuilder{}).Dialect(pg)
+func newCreateDatabase() builder.CreateDatabaseBuilder {
+	return (builder.CreateDatabaseBuilder{}).Dialect(pg)
 }
 
-func newDropDatabase() builder.SqlDropDatabaseBuilder {
-	return (builder.SqlDropDatabaseBuilder{}).Dialect(pg)
+func newDropDatabase() builder.DropDatabaseBuilder {
+	return (builder.DropDatabaseBuilder{}).Dialect(pg)
 }
 
 // sqlCase is the common shape of table-driven builder tests.
 type sqlCase struct {
 	name string
-	b    builder.SqlBuilder
+	b    builder.Statement
 	want string
 }
 
@@ -52,22 +52,22 @@ func runSQLCases(t *testing.T, tests []sqlCase) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSql(), tt.want)
+			sqltesting.AssertSQL(t, tt.b.ToSQL(), tt.want)
 		})
 	}
 }
 
-// TestSqlBuilder_RenderContract checks the two render methods every builder shares:
-// ToSql uses the builder's own dialect and ends with a semicolon, while
-// ToSqlWithDialect uses the given dialect and has no semicolon.
-func TestSqlBuilder_RenderContract(t *testing.T) {
+// TestBuilder_RenderContract checks the two render methods every builder shares:
+// ToSQL uses the builder's own dialect and ends with a semicolon, while
+// ToSQLWithDialect uses the given dialect and has no semicolon.
+func TestBuilder_RenderContract(t *testing.T) {
 	t.Parallel()
-	mysql := &dialect.MysqlDialect{}
+	mysql := &dialect.MySQL{}
 
 	tests := []struct {
 		name      string
-		b         builder.SqlBuilder
-		wantToSql string
+		b         builder.Statement
+		wantToSQL string
 		wantMySQL string
 	}{
 		{"select", newSelect().From("users").Select("id"), `SELECT "id" FROM "users";`, "SELECT `id` FROM `users`"},
@@ -85,41 +85,41 @@ func TestSqlBuilder_RenderContract(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSql(), tt.wantToSql)
-			sqltesting.AssertSQL(t, tt.b.ToSqlWithDialect(mysql), tt.wantMySQL)
+			sqltesting.AssertSQL(t, tt.b.ToSQL(), tt.wantToSQL)
+			sqltesting.AssertSQL(t, tt.b.ToSQLWithDialect(mysql), tt.wantMySQL)
 		})
 	}
 }
 
-// TestSqlBuilder_PanicsWithoutDialect checks that a missing dialect fails loudly
+// TestBuilder_PanicsWithoutDialect checks that a missing dialect fails loudly
 // instead of rendering SQL with no quoting rules.
-func TestSqlBuilder_PanicsWithoutDialect(t *testing.T) {
+func TestBuilder_PanicsWithoutDialect(t *testing.T) {
 	t.Parallel()
 
 	builders := []struct {
 		name string
-		b    builder.SqlBuilder
+		b    builder.Statement
 	}{
-		{"select", builder.SqlSelectBuilder{}},
-		{"insert", builder.SqlInsertBuilder{}},
-		{"update", builder.SqlUpdateBuilder{}},
-		{"delete", builder.SqlDeleteBuilder{}},
-		{"create table", builder.SqlCreateTableBuilder{}},
-		{"create index", builder.SqlCreateIndexBuilder{}},
-		{"alter table", builder.SqlAlterTableBuilder{}},
-		{"drop table", builder.SqlDropTableBuilder{}},
-		{"drop index", builder.SqlDropIndexBuilder{}},
-		{"create database", builder.SqlCreateDatabaseBuilder{}},
-		{"drop database", builder.SqlDropDatabaseBuilder{}},
+		{"select", builder.SelectBuilder{}},
+		{"insert", builder.InsertBuilder{}},
+		{"update", builder.UpdateBuilder{}},
+		{"delete", builder.DeleteBuilder{}},
+		{"create table", builder.CreateTableBuilder{}},
+		{"create index", builder.CreateIndexBuilder{}},
+		{"alter table", builder.AlterTableBuilder{}},
+		{"drop table", builder.DropTableBuilder{}},
+		{"drop index", builder.DropIndexBuilder{}},
+		{"create database", builder.CreateDatabaseBuilder{}},
+		{"drop database", builder.DropDatabaseBuilder{}},
 	}
 	for _, tt := range builders {
-		t.Run(tt.name+"/ToSql", func(t *testing.T) {
+		t.Run(tt.name+"/ToSQL", func(t *testing.T) {
 			t.Parallel()
-			assertPanics(t, func() { tt.b.ToSql() })
+			assertPanics(t, func() { tt.b.ToSQL() })
 		})
-		t.Run(tt.name+"/ToSqlWithDialect(nil)", func(t *testing.T) {
+		t.Run(tt.name+"/ToSQLWithDialect(nil)", func(t *testing.T) {
 			t.Parallel()
-			assertPanics(t, func() { tt.b.ToSqlWithDialect(nil) })
+			assertPanics(t, func() { tt.b.ToSQLWithDialect(nil) })
 		})
 	}
 }
@@ -134,10 +134,10 @@ func assertPanics(t *testing.T, f func()) {
 	f()
 }
 
-// TestSqlBuilder_CopiesCallerSlices checks that builders keep their own copy of
+// TestBuilder_CopiesCallerSlices checks that builders keep their own copy of
 // slices passed to variadic methods, so reusing a slice cannot rewrite a query
 // that was already built.
-func TestSqlBuilder_CopiesCallerSlices(t *testing.T) {
+func TestBuilder_CopiesCallerSlices(t *testing.T) {
 	t.Parallel()
 	cols := []string{"a", "b"}
 	vals := []any{1, 2}

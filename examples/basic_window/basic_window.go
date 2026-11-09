@@ -19,7 +19,7 @@ func main() {
 				"row_num",
 			),
 		).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql1)
 
 	// RANK vs DENSE_RANK: ties get the same rank; DENSE_RANK leaves no gaps
@@ -35,7 +35,7 @@ func main() {
 			sqbl.As(window, "rank"),
 			sqbl.As(denseWindow, "dense_rank"),
 		).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql2)
 
 	// Running total: SUM() OVER with ORDER BY accumulates the sum row by row
@@ -50,6 +50,6 @@ func main() {
 				"running_total",
 			),
 		).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql3)
 }

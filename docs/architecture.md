@@ -15,7 +15,7 @@ sqbl is structured in five layers, each with a distinct responsibility:
 Absorbs DB-specific lexical differences. The dialect has no say in SQL structure — it only controls how individual tokens are rendered.
 
 ```go
-type SqlDialect interface {
+type Dialect interface {
     Quote(buf *bytes.Buffer, s string)
     QuoteIdentifier(buf *bytes.Buffer, name string)
     PlaceholderPositional(buf *bytes.Buffer)
@@ -26,7 +26,7 @@ type SqlDialect interface {
 
 All methods write directly into a `*bytes.Buffer` to avoid intermediate string allocations. `Quote` handles a single segment; `QuoteIdentifier` splits on `.` and calls `Quote` on each part.
 
-Built-in implementations: `PostgresDialect`, `MysqlDialect`, `SqliteDialect`, `SimpleDialect` (tests only).
+Built-in implementations: `Postgres`, `MySQL`, `SQLite`, `Simple` (tests only).
 
 ---
 
@@ -35,33 +35,33 @@ Built-in implementations: `PostgresDialect`, `MysqlDialect`, `SqliteDialect`, `S
 Defines the data types that represent pieces of SQL. Everything — columns, conditions, functions, parameters, subqueries — implements a single interface:
 
 ```go
-type SqlFragment interface {
-    AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect)
+type SQLFragment interface {
+    AppendSQL(buf *bytes.Buffer, d dialect.Dialect)
 }
 ```
 
-Each fragment writes directly into the shared buffer instead of returning a string. There is no separate `Expression` type; condition types and structural types are both just `SqlFragment`.
+Each fragment writes directly into the shared buffer instead of returning a string. There is no separate `Expression` type; condition types and structural types are both just `SQLFragment`.
 
 Key types:
 
 - `Ident` — an identifier, quoted via `QuoteIdentifier`; a plain string is treated the same way
 - `Raw` — SQL text written as-is
 - `Aliased` — `<source> AS <alias>`, optionally followed by column aliases (`AS ids (id)`)
-- `SqlFn` — a function call such as `SUM("amount")` or `COUNT(*)`
+- `FnExpr` — a function call such as `SUM("amount")` or `COUNT(*)`
 - `CastExpr` — a type conversion such as `CAST($1 AS bigint[])`
 - `WindowExpr` — a window function expression (`expr OVER (PARTITION BY ... ORDER BY ...)`)
 - `Parameter` — a bind parameter placeholder (`?`, `$N`, `:name`, `@name`)
 - Condition types: `ComparisonExpr`, `LogicalExpr`, `NotExpr`, `InExpr`, `NullExpr`, `BetweenExpr`
-- `Subquery` — a `SqlFragment` that renders with its own parentheses, such as a SELECT builder; `IN` uses it as-is, so `IN (subquery)` gets a single pair of parentheses
+- `Subquery` — a `SQLFragment` that renders with its own parentheses, such as a SELECT builder; `IN` uses it as-is, so `IN (subquery)` gets a single pair of parentheses
 
 Every argument that accepts an expression (`any`) follows one rule, implemented by `AppendValue` and `ToFragment`:
 
-- `SqlFragment` values render themselves.
+- `SQLFragment` values render themselves.
 - Strings are identifiers. The content of a string is never inspected to decide whether it is an expression.
 - `bool` uses the dialect's boolean literal, and `nil` is `NULL`.
 - Anything else, such as a number, is formatted with `fmt.Sprint`.
 
-`AppendValue` writes directly into the buffer. `ToFragment` returns a `SqlFragment` for builders that store expressions before rendering.
+`AppendValue` writes directly into the buffer. `ToFragment` returns a `SQLFragment` for builders that store expressions before rendering.
 
 ---
 
@@ -70,21 +70,21 @@ Every argument that accepts an expression (`any`) follows one rule, implemented 
 Holds all query state and renders the final SQL string. All builders implement:
 
 ```go
-type SqlBuilder interface {
-    ToSql() string
-    ToSqlWithDialect(d dialect.SqlDialect) string
+type Statement interface {
+    ToSQL() string
+    ToSQLWithDialect(d dialect.Dialect) string
 }
 ```
 
-`ToSql()` renders with a trailing semicolon using the builder's own dialect. `ToSqlWithDialect(d)` renders without a semicolon using the given dialect.
+`ToSQL()` renders with a trailing semicolon using the builder's own dialect. `ToSQLWithDialect(d)` renders without a semicolon using the given dialect.
 
-Both panic when there is no dialect to render with: `ToSql()` on a builder without a dialect, or `ToSqlWithDialect(nil)`. A missing dialect is a programming error that shows up on the first render, so it is not reported through an error return on every call.
+Both panic when there is no dialect to render with: `ToSQL()` on a builder without a dialect, or `ToSQLWithDialect(nil)`. A missing dialect is a programming error that shows up on the first render, so it is not reported through an error return on every call.
 
-`SqlSelectBuilder` additionally implements `SqlFragment` via `AppendSQL`, which writes the query wrapped in parentheses. This is what makes it embeddable as a subquery in `From`, `Join`, and `In`.
+`SelectBuilder` additionally implements `SQLFragment` via `AppendSQL`, which writes the query wrapped in parentheses. This is what makes it embeddable as a subquery in `From`, `Join`, and `In`.
 
 State is accumulated independently of method call order and rendered at the end by a single `renderSQL` pass. `Select(...).From(...)` and `From(...).Select(...)` produce identical output.
 
-Builders: `SqlSelectBuilder`, `SqlInsertBuilder`, `SqlUpdateBuilder`, `SqlDeleteBuilder`, `SqlCreateTableBuilder`, `SqlCreateIndexBuilder`, `SqlDropTableBuilder`, `SqlDropIndexBuilder`, `SqlAlterTableBuilder`, `SqlCreateDatabaseBuilder`, `SqlDropDatabaseBuilder`.
+Builders: `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `CreateTableBuilder`, `CreateIndexBuilder`, `DropTableBuilder`, `DropIndexBuilder`, `AlterTableBuilder`, `CreateDatabaseBuilder`, `DropDatabaseBuilder`.
 
 ---
 
@@ -92,7 +92,7 @@ Builders: `SqlSelectBuilder`, `SqlInsertBuilder`, `SqlUpdateBuilder`, `SqlDelete
 
 Dialect-free entry points for code that targets several databases.
 
-- `sqbl.go` — the same entry point functions as the dialect packages, returning builders with no dialect. Render them with `ToSqlWithDialect`.
+- `sqbl.go` — the same entry point functions as the dialect packages, returning builders with no dialect. Render them with `ToSQLWithDialect`.
 - `reexport.go` — re-exports every `syntax` helper, including DB-specific ones such as `ILike`, since the root package is not tied to a database.
 
 ---

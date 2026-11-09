@@ -13,13 +13,13 @@ import (
 //	syntax.Over(syntax.Fn("ROW_NUMBER")).PartitionBy("dept").OrderBy("salary")
 //	// ROW_NUMBER() OVER (PARTITION BY "dept" ORDER BY "salary")
 type WindowExpr struct {
-	expr        SqlFragment
+	expr        SQLFragment
 	partitionBy []string
 	orderBy     []any
 	frame       string // e.g. "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
 }
 
-var _ SqlFragment = WindowExpr{}
+var _ SQLFragment = WindowExpr{}
 
 // Over wraps an expression (typically a Fn call) with an OVER clause.
 //
@@ -64,8 +64,8 @@ func (w WindowExpr) Range(frame string) WindowExpr {
 	return w
 }
 
-// AppendSQL implements SqlFragment, writing the window function expression into buf.
-func (w WindowExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the window function expression into buf.
+func (w WindowExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	w.expr.AppendSQL(buf, d)
 	buf.WriteString(" OVER (")
 	needSpace := false

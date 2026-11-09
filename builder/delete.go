@@ -9,23 +9,23 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// SqlDeleteBuilder constructs a SQL DELETE statement using a fluent method chain.
+// DeleteBuilder constructs a SQL DELETE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.DeleteFrom) to create an instance.
 //
 //	q := sqblpg.DeleteFrom("users").
 //	    Where(sqblpg.Eq("id", sqbl.P(1)))
-//	sql := q.ToSql()
-type SqlDeleteBuilder struct {
-	dialect   dialect.SqlDialect
+//	sql := q.ToSQL()
+type DeleteBuilder struct {
+	dialect   dialect.Dialect
 	from      string
-	where     syntax.SqlFragment
+	where     syntax.SQLFragment
 	returning []string
 }
 
-var _ SqlBuilder = SqlDeleteBuilder{}
+var _ Statement = DeleteBuilder{}
 
-// ToSql renders the DELETE statement with a trailing semicolon.
-func (b SqlDeleteBuilder) ToSql() string {
+// ToSQL renders the DELETE statement with a trailing semicolon.
+func (b DeleteBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -35,8 +35,8 @@ func (b SqlDeleteBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the DELETE statement using the given dialect, without a trailing semicolon.
-func (b SqlDeleteBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the DELETE statement using the given dialect, without a trailing semicolon.
+func (b DeleteBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -45,7 +45,7 @@ func (b SqlDeleteBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-func (b SqlDeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b DeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// DELETE FROM table
 	buf.WriteString("DELETE FROM")
 	if b.from != "" {
@@ -72,7 +72,7 @@ func (b SqlDeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlDeleteBuilder) Dialect(d dialect.SqlDialect) SqlDeleteBuilder {
+func (b DeleteBuilder) Dialect(d dialect.Dialect) DeleteBuilder {
 	b.dialect = d
 	return b
 }
@@ -80,7 +80,7 @@ func (b SqlDeleteBuilder) Dialect(d dialect.SqlDialect) SqlDeleteBuilder {
 // From sets the target table for the DELETE statement.
 //
 //	b.From("users")
-func (b SqlDeleteBuilder) From(table string) SqlDeleteBuilder {
+func (b DeleteBuilder) From(table string) DeleteBuilder {
 	b.from = table
 	return b
 }
@@ -88,7 +88,7 @@ func (b SqlDeleteBuilder) From(table string) SqlDeleteBuilder {
 // Where sets the WHERE condition.
 //
 //	b.Where(sqblpg.Eq("id", sqbl.P(1)))
-func (b SqlDeleteBuilder) Where(expr syntax.SqlFragment) SqlDeleteBuilder {
+func (b DeleteBuilder) Where(expr syntax.SQLFragment) DeleteBuilder {
 	b.where = expr
 	return b
 }
@@ -97,7 +97,7 @@ func (b SqlDeleteBuilder) Where(expr syntax.SqlFragment) SqlDeleteBuilder {
 // The specified columns are returned for each deleted row.
 //
 //	sqblpg.DeleteFrom("sessions").Where(...).Returning("id", "user_id")
-func (b SqlDeleteBuilder) Returning(cols ...string) SqlDeleteBuilder {
+func (b DeleteBuilder) Returning(cols ...string) DeleteBuilder {
 	b.returning = slices.Clone(cols)
 	return b
 }

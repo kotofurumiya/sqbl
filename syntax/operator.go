@@ -7,8 +7,8 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-var _ SqlFragment = ComparisonExpr{}
-var _ SqlFragment = LogicalExpr{}
+var _ SQLFragment = ComparisonExpr{}
+var _ SQLFragment = LogicalExpr{}
 
 // ComparisonExpr represents a binary comparison such as col = value.
 // Left and Right accept the same values as AppendValue; a plain string is an identifier.
@@ -18,8 +18,8 @@ type ComparisonExpr struct {
 	Right    any
 }
 
-// AppendSQL implements SqlFragment, writing the comparison into buf.
-func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the comparison into buf.
+func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	AppendValue(buf, d, e.Left)
 	buf.WriteByte(' ')
 	buf.WriteString(e.Operator)
@@ -78,12 +78,12 @@ func Gte(left any, right any) ComparisonExpr {
 // LogicalExpr combines multiple SQL fragments with a logical operator (AND/OR).
 type LogicalExpr struct {
 	Operator    string
-	Expressions []SqlFragment
+	Expressions []SQLFragment
 }
 
-// AppendSQL implements SqlFragment, writing all sub-expressions joined by the logical operator into buf.
+// AppendSQL implements SQLFragment, writing all sub-expressions joined by the logical operator into buf.
 // Nested LogicalExpr are wrapped in parentheses to preserve evaluation order.
-func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	for i, exp := range e.Expressions {
 		if i > 0 {
 			buf.WriteByte(' ')
@@ -104,7 +104,7 @@ func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 //
 //	syntax.And(syntax.Eq("active", true), syntax.Gt("age", 18))
 //	// "active" = TRUE AND "age" > 18
-func And(exprs ...SqlFragment) LogicalExpr {
+func And(exprs ...SQLFragment) LogicalExpr {
 	return LogicalExpr{Operator: "AND", Expressions: slices.Clone(exprs)}
 }
 
@@ -112,19 +112,19 @@ func And(exprs ...SqlFragment) LogicalExpr {
 //
 //	syntax.Or(syntax.Eq("role", syntax.P(1)), syntax.Eq("role", syntax.P(2)))
 //	// "role" = $1 OR "role" = $2
-func Or(exprs ...SqlFragment) LogicalExpr {
+func Or(exprs ...SQLFragment) LogicalExpr {
 	return LogicalExpr{Operator: "OR", Expressions: slices.Clone(exprs)}
 }
 
 // NotExpr represents a NOT (...) expression.
 type NotExpr struct {
-	Expr SqlFragment
+	Expr SQLFragment
 }
 
-var _ SqlFragment = NotExpr{}
+var _ SQLFragment = NotExpr{}
 
-// AppendSQL implements SqlFragment, writing NOT (...) into buf.
-func (e NotExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing NOT (...) into buf.
+func (e NotExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	buf.WriteString("NOT (")
 	e.Expr.AppendSQL(buf, d)
 	buf.WriteByte(')')
@@ -134,7 +134,7 @@ func (e NotExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 //
 //	syntax.Not(syntax.Eq("active", false))
 //	// NOT ("active" = FALSE)
-func Not(expr SqlFragment) NotExpr {
+func Not(expr SQLFragment) NotExpr {
 	return NotExpr{Expr: expr}
 }
 
@@ -146,10 +146,10 @@ type InExpr struct {
 	Values []any
 }
 
-var _ SqlFragment = InExpr{}
+var _ SQLFragment = InExpr{}
 
-// AppendSQL implements SqlFragment, writing the IN or NOT IN expression into buf.
-func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the IN or NOT IN expression into buf.
+func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	AppendValue(buf, d, e.Left)
 	if e.Negate {
 		buf.WriteString(" NOT IN ")
@@ -197,10 +197,10 @@ type NullExpr struct {
 	Negate bool
 }
 
-var _ SqlFragment = NullExpr{}
+var _ SQLFragment = NullExpr{}
 
-// AppendSQL implements SqlFragment, writing IS NULL or IS NOT NULL into buf.
-func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing IS NULL or IS NOT NULL into buf.
+func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	AppendValue(buf, d, e.Col)
 	if e.Negate {
 		buf.WriteString(" IS NOT NULL")
@@ -233,10 +233,10 @@ type BetweenExpr struct {
 	High any
 }
 
-var _ SqlFragment = BetweenExpr{}
+var _ SQLFragment = BetweenExpr{}
 
-// AppendSQL implements SqlFragment, writing the BETWEEN expression into buf.
-func (e BetweenExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the BETWEEN expression into buf.
+func (e BetweenExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	AppendValue(buf, d, e.Col)
 	buf.WriteString(" BETWEEN ")
 	AppendValue(buf, d, e.Low)

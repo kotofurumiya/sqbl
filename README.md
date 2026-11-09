@@ -34,10 +34,10 @@ import (
 
 func main() {
   // SELECT "id", "name" FROM "users";
-  sql1 := sqbl.From("users").Select("id", "name").ToSql()
+  sql1 := sqbl.From("users").Select("id", "name").ToSQL()
 
   // Method order is flexible
-  sql2 := sqbl.Select("id", "name").From("users").ToSql()
+  sql2 := sqbl.Select("id", "name").From("users").ToSQL()
 
   // SELECT "id", "name" FROM "users" WHERE "active" = TRUE ORDER BY "name" ASC, "created_at" DESC LIMIT 20;
   sql3 := sqbl.From("users").
@@ -45,7 +45,7 @@ func main() {
     Where(sqbl.Eq("active", true)).
     OrderBy(sqbl.Asc("name"), sqbl.Desc("created_at")).
     Limit(20).
-    ToSql()
+    ToSQL()
 
   // SELECT
   //   "u"."id", "u"."name", SUM("p"."amount") AS "total_spent"
@@ -70,11 +70,11 @@ func main() {
     Having(sqbl.Gt(sqbl.Fn("SUM", "p.amount"), 5000)).
     OrderBy(sqbl.Desc("total_spent")).
     Limit(10).
-    ToSql()
+    ToSQL()
 
   // Subquery in FROM
   sub := sqbl.From("orders").Select("user_id").Where(sqbl.Eq("status", sqbl.Raw("'paid'")))
-  sql5 := sqbl.From(sqbl.As(sub, "sub")).Select("sub.user_id").ToSql()
+  sql5 := sqbl.From(sqbl.As(sub, "sub")).Select("sub.user_id").ToSQL()
 
   // SELECT "id", "payload" FROM "jobs" WHERE "status" = 'pending' ORDER BY "id" ASC LIMIT 1 FOR UPDATE SKIP LOCKED;
   sql6 := sqbl.From("jobs").
@@ -83,7 +83,7 @@ func main() {
     OrderBy(sqbl.Asc("id")).
     Limit(1).
     ForUpdate().SkipLocked().
-    ToSql()
+    ToSQL()
 
   // SELECT "id", "name" FROM "users" WHERE "role" = 'admin' OR "role" = 'moderator';
   sql7 := sqbl.From("users").
@@ -92,13 +92,13 @@ func main() {
       sqbl.Eq("role", sqbl.Raw("'admin'")),
       sqbl.Eq("role", sqbl.Raw("'moderator'")),
     )).
-    ToSql()
+    ToSQL()
 }
 ```
 
 ## Multiple Dialects
 
-Build once with the root `sqbl` package, then render for each database with `ToSqlWithDialect`.
+Build once with the root `sqbl` package, then render for each database with `ToSQLWithDialect`.
 
 ```go
 import (
@@ -108,11 +108,11 @@ import (
 
 q := sqbl.From("users").Select("id").Where(sqbl.Eq("id", sqbl.P(1)))
 
-q.ToSqlWithDialect(&dialect.PostgresDialect{}) // SELECT "id" FROM "users" WHERE "id" = $1
-q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?1
+q.ToSQLWithDialect(&dialect.Postgres{}) // SELECT "id" FROM "users" WHERE "id" = $1
+q.ToSQLWithDialect(&dialect.SQLite{})   // SELECT "id" FROM "users" WHERE "id" = ?1
 ```
 
-- Builders from the root package have no dialect, so `ToSql()` panics on them.
+- Builders from the root package have no dialect, so `ToSQL()` panics on them.
 - sqbl renders every clause you ask for. Branch in your own code for clauses that only some databases support, such as `ForUpdate()`.
 
 ## Identifiers, Values, and Raw SQL

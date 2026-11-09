@@ -2,7 +2,7 @@ package builder_test
 
 import "testing"
 
-func TestSqlAlterTableBuilder_Operations(t *testing.T) {
+func TestAlterTableBuilder_Operations(t *testing.T) {
 	t.Parallel()
 	users := newAlterTable().Table("users")
 

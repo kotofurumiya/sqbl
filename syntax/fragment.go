@@ -9,14 +9,14 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-// SqlFragment is a type that can render itself into a SQL buffer for a given dialect.
-type SqlFragment interface {
-	AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect)
+// SQLFragment is a type that can render itself into a SQL buffer for a given dialect.
+type SQLFragment interface {
+	AppendSQL(buf *bytes.Buffer, d dialect.Dialect)
 }
 
 var (
-	_ SqlFragment = Ident("")
-	_ SqlFragment = Raw("")
+	_ SQLFragment = Ident("")
+	_ SQLFragment = Raw("")
 )
 
 // Ident is an identifier such as a column or table name.
@@ -30,8 +30,8 @@ var (
 //	syntax.Ident("u.*")      // "u".*
 type Ident string
 
-// AppendSQL implements SqlFragment, writing the quoted identifier into buf.
-func (i Ident) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the quoted identifier into buf.
+func (i Ident) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	s := string(i)
 	if s == "*" {
 		buf.WriteByte('*')
@@ -45,11 +45,11 @@ func (i Ident) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	d.QuoteIdentifier(buf, s)
 }
 
-// Subquery is a SqlFragment that renders itself enclosed in parentheses, such as a
+// Subquery is a SQLFragment that renders itself enclosed in parentheses, such as a
 // SELECT builder. Expressions that need parentheses around their operand, like IN,
 // write it as-is instead of adding another pair.
 type Subquery interface {
-	SqlFragment
+	SQLFragment
 	IsSubquery()
 }
 
@@ -60,24 +60,24 @@ type Subquery interface {
 //	syntax.Raw("'pending'")
 type Raw string
 
-// AppendSQL implements SqlFragment, writing the string into buf unchanged.
-func (r Raw) AppendSQL(buf *bytes.Buffer, _ dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the string into buf unchanged.
+func (r Raw) AppendSQL(buf *bytes.Buffer, _ dialect.Dialect) {
 	buf.WriteString(string(r))
 }
 
 // boolValue is a boolean literal rendered with the dialect's representation.
 type boolValue bool
 
-// AppendSQL implements SqlFragment, writing the dialect's boolean literal into buf.
-func (b boolValue) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the dialect's boolean literal into buf.
+func (b boolValue) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	d.Bool(buf, bool(b))
 }
 
-// ToFragment converts a value accepted by expression arguments to a SqlFragment.
+// ToFragment converts a value accepted by expression arguments to a SQLFragment.
 // See AppendValue for how each type is interpreted.
-func ToFragment(v any) SqlFragment {
+func ToFragment(v any) SQLFragment {
 	switch v := v.(type) {
-	case SqlFragment:
+	case SQLFragment:
 		return v
 	case string:
 		return Ident(v)
@@ -91,16 +91,16 @@ func ToFragment(v any) SqlFragment {
 }
 
 // AppendValue writes a value accepted by expression arguments into buf.
-//   - SqlFragment: rendered by its own AppendSQL.
+//   - SQLFragment: rendered by its own AppendSQL.
 //   - string: an identifier (same as Ident). Use Raw for SQL text and P for values.
 //   - bool: the dialect's boolean literal.
 //   - nil: NULL.
 //   - anything else: formatted with fmt, e.g. numbers.
 //
 // It is equivalent to ToFragment(v).AppendSQL(buf, d) without the allocation.
-func AppendValue(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
+func AppendValue(buf *bytes.Buffer, d dialect.Dialect, v any) {
 	switch v := v.(type) {
-	case SqlFragment:
+	case SQLFragment:
 		v.AppendSQL(buf, d)
 	case string:
 		Ident(v).AppendSQL(buf, d)
@@ -116,16 +116,16 @@ func AppendValue(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
 // Aliased represents an expression with an AS alias (e.g. "users" AS "u"),
 // optionally followed by column aliases (e.g. "ids" ("id")).
 type Aliased struct {
-	Source  SqlFragment
+	Source  SQLFragment
 	Alias   string
 	Columns []string
 }
 
-var _ SqlFragment = Aliased{}
+var _ SQLFragment = Aliased{}
 
-// AppendSQL implements SqlFragment, writing the source followed by AS alias
+// AppendSQL implements SQLFragment, writing the source followed by AS alias
 // and any column aliases into buf.
-func (a Aliased) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (a Aliased) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	a.Source.AppendSQL(buf, d)
 	buf.WriteString(" AS ")
 	d.Quote(buf, a.Alias)
@@ -148,10 +148,10 @@ type Order struct {
 	dir string // "ASC" or "DESC"
 }
 
-var _ SqlFragment = Order{}
+var _ SQLFragment = Order{}
 
-// AppendSQL implements SqlFragment, writing the column name followed by ASC or DESC into buf.
-func (o Order) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing the column name followed by ASC or DESC into buf.
+func (o Order) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	d.QuoteIdentifier(buf, o.col)
 	buf.WriteByte(' ')
 	buf.WriteString(o.dir)

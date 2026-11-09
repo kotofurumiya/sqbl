@@ -11,7 +11,7 @@ func TestFnAndCast(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		fragment SqlFragment
+		fragment SQLFragment
 		want     string
 	}{
 		{"Fn without args", Fn("NOW"), "NOW()"},

@@ -12,7 +12,7 @@ func main() {
 	sql1 := sqbl.From("users").
 		Select("id", "name").
 		Where(sqbl.Eq("id", sqbl.P(1))).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql1)
 
 	// Use indexed params in INSERT
@@ -20,7 +20,7 @@ func main() {
 	sql2 := sqbl.InsertInto("users").
 		Columns("name", "email").
 		Values(sqbl.P(1), sqbl.P(2)).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql2)
 
 	// Named parameters: :name style
@@ -31,7 +31,7 @@ func main() {
 			sqbl.Eq("status", sqbl.P(":status")),
 			sqbl.Eq("role", sqbl.P(":role")),
 		)).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql3)
 
 	// Positional parameter: ? style (useful for MySQL or generic drivers)
@@ -39,6 +39,6 @@ func main() {
 	sql4 := sqbl.From("users").
 		Select("id", "name").
 		Where(sqbl.Eq("id", sqbl.P())).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql4)
 }

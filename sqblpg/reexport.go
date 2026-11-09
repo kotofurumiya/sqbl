@@ -78,7 +78,7 @@ func Gte(left any, right any) syntax.ComparisonExpr {
 //
 //	sqblpg.And(sqblpg.Eq("active", true), sqblpg.Gt("age", 18))
 //	// active = true AND age > 18
-func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
+func And(exprs ...syntax.SQLFragment) syntax.LogicalExpr {
 	return syntax.And(exprs...)
 }
 
@@ -86,7 +86,7 @@ func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
 //
 //	sqblpg.Or(sqblpg.Eq("role", sqblpg.P(1)), sqblpg.Eq("role", sqblpg.P(2)))
 //	// role = <param> OR role = <param>
-func Or(exprs ...syntax.SqlFragment) syntax.LogicalExpr {
+func Or(exprs ...syntax.SQLFragment) syntax.LogicalExpr {
 	return syntax.Or(exprs...)
 }
 
@@ -108,7 +108,7 @@ func Desc(col string) syntax.Order {
 //
 //	sqblpg.Not(sqblpg.Eq("active", false))
 //	// NOT ("active" = FALSE)
-func Not(expr syntax.SqlFragment) syntax.NotExpr {
+func Not(expr syntax.SQLFragment) syntax.NotExpr {
 	return syntax.Not(expr)
 }
 
@@ -184,7 +184,7 @@ func P(args ...any) syntax.Parameter {
 //	sqblpg.Fn("SUM", "amount")          // SUM(amount)
 //	sqblpg.Fn("COUNT", "*")             // COUNT(*)
 //	sqblpg.Fn("COALESCE", "x", sqbl.P(1)) // COALESCE(x, $1)
-func Fn(name string, args ...any) syntax.SqlFn {
+func Fn(name string, args ...any) syntax.FnExpr {
 	return syntax.Fn(name, args...)
 }
 

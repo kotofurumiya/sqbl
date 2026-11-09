@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlCreateIndexBuilder_Clauses(t *testing.T) {
+func TestCreateIndexBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	idx := newCreateIndex().Name("idx_users_email").On("users").Columns("email")
 
@@ -45,17 +45,17 @@ func TestSqlCreateIndexBuilder_Clauses(t *testing.T) {
 	})
 }
 
-// TestSqlCreateIndexBuilder_BranchIsolation checks that deriving two indexes
+// TestCreateIndexBuilder_BranchIsolation checks that deriving two indexes
 // from a shared base does not leak columns between them. The base holds three
 // columns so that a backing array with spare capacity would be shared if
 // Columns appended in place.
-func TestSqlCreateIndexBuilder_BranchIsolation(t *testing.T) {
+func TestCreateIndexBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	base := newCreateIndex().Name("idx").On("t").Columns("a").Columns("b").Columns("c")
 	left := base.Columns("l")
 	right := base.Columns("r")
 
-	sqltesting.AssertSQL(t, base.ToSql(), `CREATE INDEX "idx" ON "t" ("a", "b", "c");`)
-	sqltesting.AssertSQL(t, left.ToSql(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "l");`)
-	sqltesting.AssertSQL(t, right.ToSql(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "r");`)
+	sqltesting.AssertSQL(t, base.ToSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c");`)
+	sqltesting.AssertSQL(t, left.ToSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "l");`)
+	sqltesting.AssertSQL(t, right.ToSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "r");`)
 }

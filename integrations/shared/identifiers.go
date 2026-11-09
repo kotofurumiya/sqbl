@@ -29,7 +29,7 @@ func runIdentifiers(t *testing.T, conn Conn, s Suite) {
 		s.InsertInto("order").
 			Columns("id", "select", mixed, quoted, evil).
 			Values(syntax.P(1), syntax.P(2), syntax.P(3), syntax.P(4), syntax.P(5)).
-			ToSql(),
+			ToSQL(),
 		1, "a", "b", "c", "d",
 	)
 
@@ -37,7 +37,7 @@ func runIdentifiers(t *testing.T, conn Conn, s Suite) {
 	sql := s.From(syntax.As("order", "o")).
 		Select("o.select", "o."+mixed, "o."+quoted, "o."+evil).
 		Where(syntax.And(syntax.Eq("o.select", syntax.P(1)), syntax.Eq("o."+evil, syntax.P(2)))).
-		ToSql()
+		ToSQL()
 
 	var got [4]string
 	MustScan(t, conn, sql, []any{"a", "d"}, &got[0], &got[1], &got[2], &got[3])
@@ -65,15 +65,15 @@ func runInjectionValues(t *testing.T, conn Conn, s Suite) {
 		"_",
 		"go%lang",
 	}
-	insert := s.InsertInto("notes").Columns("id", "content").Values(syntax.P(1), syntax.P(2)).ToSql()
+	insert := s.InsertInto("notes").Columns("id", "content").Values(syntax.P(1), syntax.P(2)).ToSQL()
 	for i, p := range payloads {
 		MustExec(t, conn, insert, i+1, p)
 	}
 
-	all := s.From("notes").Select("content").OrderBy(syntax.Asc("id")).ToSql()
+	all := s.From("notes").Select("content").OrderBy(syntax.Asc("id")).ToSQL()
 	AssertSlice(t, QueryColumn[string](t, conn, all), payloads)
 
-	match := s.From("notes").Select("id").Where(syntax.Eq("content", syntax.P(1))).ToSql()
+	match := s.From("notes").Select("id").Where(syntax.Eq("content", syntax.P(1))).ToSQL()
 	for i, p := range payloads {
 		AssertSlice(t, QueryColumn[int](t, conn, match, p), []int{i + 1})
 	}
@@ -86,14 +86,14 @@ func runInjectionValues(t *testing.T, conn Conn, s Suite) {
 // query must succeed.
 func runInjectionIdentifiers(t *testing.T, conn Conn, s Suite) {
 	MustExec(t, conn, `CREATE TEMPORARY TABLE victims (id INTEGER PRIMARY KEY)`)
-	MustExec(t, conn, s.InsertInto("victims").Columns("id").Values(1).ToSql())
+	MustExec(t, conn, s.InsertInto("victims").Columns("id").Values(1).ToSQL())
 
 	const payload = "id; DROP TABLE victims; --"
 	unknown := []struct{ name, sql string }{
-		{"From", s.From(payload).Select("id").ToSql()},
-		{"Select", s.From("victims").Select(payload).ToSql()},
-		{"Where", s.From("victims").Select("id").Where(syntax.Eq(payload, 1)).ToSql()},
-		{"OrderBy", s.From("victims").Select("id").OrderBy(syntax.Asc(payload)).ToSql()},
+		{"From", s.From(payload).Select("id").ToSQL()},
+		{"Select", s.From("victims").Select(payload).ToSQL()},
+		{"Where", s.From("victims").Select("id").Where(syntax.Eq(payload, 1)).ToSQL()},
+		{"OrderBy", s.From("victims").Select("id").OrderBy(syntax.Asc(payload)).ToSQL()},
 	}
 	for _, tt := range unknown {
 		t.Run(tt.name, func(t *testing.T) {
@@ -105,7 +105,7 @@ func runInjectionIdentifiers(t *testing.T, conn Conn, s Suite) {
 	}
 
 	t.Run("Alias", func(t *testing.T) {
-		sql := s.From("victims").Select(syntax.As("id", payload)).ToSql()
+		sql := s.From("victims").Select(syntax.As("id", payload)).ToSQL()
 		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{1})
 		AssertCount(t, conn, "victims", 1)
 	})

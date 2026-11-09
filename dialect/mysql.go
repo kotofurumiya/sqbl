@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// MysqlDialect implements the Dialect interface for MySQL.
-type MysqlDialect struct{}
+// MySQL implements the Dialect interface for MySQL.
+type MySQL struct{}
 
-var _ SqlDialect = &MysqlDialect{}
+var _ Dialect = &MySQL{}
 
 // Quote writes a single identifier part wrapped in backticks into buf.
 // Any existing backtick characters within the identifier are escaped by doubling.
@@ -17,7 +17,7 @@ var _ SqlDialect = &MysqlDialect{}
 //
 //	users      -> `users`
 //	my`table   -> `my``table`
-func (m *MysqlDialect) Quote(buf *bytes.Buffer, s string) {
+func (m *MySQL) Quote(buf *bytes.Buffer, s string) {
 	if strings.IndexByte(s, '`') < 0 {
 		buf.WriteByte('`')
 		buf.WriteString(s)
@@ -35,7 +35,7 @@ func (m *MysqlDialect) Quote(buf *bytes.Buffer, s string) {
 //	users          -> `users`
 //	public.users   -> `public`.`users`
 //	db.sch.table   -> `db`.`sch`.`table`
-func (m *MysqlDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
+func (m *MySQL) QuoteIdentifier(buf *bytes.Buffer, name string) {
 	if strings.IndexByte(name, '.') < 0 {
 		m.Quote(buf, name)
 		return
@@ -44,13 +44,13 @@ func (m *MysqlDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
 }
 
 // PlaceholderPositional writes the positional bind parameter "?" into buf.
-func (m *MysqlDialect) PlaceholderPositional(buf *bytes.Buffer) {
+func (m *MySQL) PlaceholderPositional(buf *bytes.Buffer) {
 	buf.WriteByte('?')
 }
 
 // PlaceholderIndexed writes the indexed bind parameter "?" into buf.
 // MySQL uses ? for all indexed placeholders, ignoring the index.
-func (m *MysqlDialect) PlaceholderIndexed(buf *bytes.Buffer, _ int) {
+func (m *MySQL) PlaceholderIndexed(buf *bytes.Buffer, _ int) {
 	buf.WriteByte('?')
 }
 
@@ -59,7 +59,7 @@ func (m *MysqlDialect) PlaceholderIndexed(buf *bytes.Buffer, _ int) {
 // Examples:
 //
 //	true -> TRUE, false -> FALSE
-func (m *MysqlDialect) Bool(buf *bytes.Buffer, b bool) {
+func (m *MySQL) Bool(buf *bytes.Buffer, b bool) {
 	if b {
 		buf.WriteString("TRUE")
 	} else {

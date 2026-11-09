@@ -15,20 +15,20 @@ const (
 )
 
 // Parameter represents a SQL bind parameter placeholder.
-// It implements SqlFragment and renders without quoting.
+// It implements SQLFragment and renders without quoting.
 type Parameter struct {
 	mode  paramMode
 	index int    // indexed mode
 	name  string // named mode (e.g. ":status", "@name")
 }
 
-var _ SqlFragment = Parameter{}
+var _ SQLFragment = Parameter{}
 
-// AppendSQL implements SqlFragment. Writes the parameter placeholder into buf.
+// AppendSQL implements SQLFragment. Writes the parameter placeholder into buf.
 // positional mode: d.PlaceholderPositional() (e.g. ?)
 // indexed mode: d.PlaceholderIndexed(p.index) (e.g. $1)
 // named mode: p.name as-is (e.g. :status).
-func (p Parameter) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (p Parameter) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	switch p.mode {
 	case paramPositional:
 		d.PlaceholderPositional(buf)

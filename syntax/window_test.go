@@ -12,7 +12,7 @@ func TestWindowExpr(t *testing.T) {
 	const frame = "BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
 	tests := []struct {
 		name string
-		w    SqlFragment
+		w    SQLFragment
 		want string
 	}{
 		{"empty window", Over(Fn("ROW_NUMBER")), "ROW_NUMBER() OVER ()"},

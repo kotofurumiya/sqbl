@@ -28,7 +28,7 @@ func main() {
 		`"updated_at" = NOW()`,
 	).
 		Returning("id", "email").
-		ToSql()
+		ToSQL()
 	fmt.Println(upsertUser)
 
 	// Step 2: Write an audit log entry for the change.
@@ -41,7 +41,7 @@ func main() {
 		Columns("user_id", "action", "payload", "created_at").
 		Values(sqbl.P(1), sqbl.P(2), sqbl.P(3), sqbl.Fn("NOW")).
 		Returning("id").
-		ToSql()
+		ToSQL()
 	fmt.Println(writeAuditLog)
 
 	// Step 3: Fetch the full audit trail for a user, newest first.
@@ -56,6 +56,6 @@ func main() {
 		Where(sqbl.Eq("user_id", sqbl.P(1))).
 		OrderBy(sqbl.Desc("created_at")).
 		Limit(50).
-		ToSql()
+		ToSQL()
 	fmt.Println(auditTrail)
 }

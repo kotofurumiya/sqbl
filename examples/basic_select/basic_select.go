@@ -12,7 +12,7 @@ func main() {
 	//     "name"
 	// FROM
 	//     "users";
-	sql1 := sqbl.From("users").Select("id", "name").ToSql()
+	sql1 := sqbl.From("users").Select("id", "name").ToSQL()
 	fmt.Println(sql1)
 
 	// SELECT
@@ -30,7 +30,7 @@ func main() {
 		Where(sqbl.Eq("active", true)).
 		OrderBy(sqbl.Asc("name")).
 		Limit(10).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql2)
 
 	// SELECT
@@ -46,6 +46,6 @@ func main() {
 			sqbl.Eq("role", sqbl.Raw("'admin'")),
 			sqbl.Eq("role", sqbl.Raw("'moderator'")),
 		)).
-		ToSql()
+		ToSQL()
 	fmt.Println(sql3)
 }

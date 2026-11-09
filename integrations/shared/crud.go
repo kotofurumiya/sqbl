@@ -32,7 +32,7 @@ func runCRUD(t *testing.T, conn Conn, s Suite) {
 		Select("name", "price").
 		Where(syntax.Eq("active", true)).
 		OrderBy(syntax.Asc("id")).
-		ToSql()
+		ToSQL()
 
 	MustExec(t, conn,
 		s.InsertInto("products").
@@ -40,7 +40,7 @@ func runCRUD(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(1), syntax.P(2), syntax.P(3), true).
 			Values(syntax.P(4), syntax.P(5), syntax.P(6), true).
 			Values(syntax.P(7), syntax.P(8), syntax.P(9), false).
-			ToSql(),
+			ToSQL(),
 		1, "Laptop", 150000,
 		2, "Mouse", 3500,
 		3, "Keyboard", 2000,
@@ -53,17 +53,17 @@ func runCRUD(t *testing.T, conn Conn, s Suite) {
 			Set("price", syntax.P(1)).
 			Set("active", false).
 			Where(syntax.Eq("name", syntax.P(2))).
-			ToSql(),
+			ToSQL(),
 		3000, "Mouse",
 	)
 	AssertSlice(t, QueryRows(t, conn, scanProduct, activeSQL),
 		[]product{{"Laptop", 150000}})
 	AssertSlice(t,
-		QueryColumn[int](t, conn, s.From("products").Select("price").Where(syntax.Eq("name", syntax.P(1))).ToSql(), "Mouse"),
+		QueryColumn[int](t, conn, s.From("products").Select("price").Where(syntax.Eq("name", syntax.P(1))).ToSQL(), "Mouse"),
 		[]int{3000})
 
-	MustExec(t, conn, s.DeleteFrom("products").Where(syntax.Eq("active", false)).ToSql())
-	AssertSlice(t, QueryColumn[int](t, conn, s.From("products").Select("id").ToSql()), []int{1})
+	MustExec(t, conn, s.DeleteFrom("products").Where(syntax.Eq("active", false)).ToSQL())
+	AssertSlice(t, QueryColumn[int](t, conn, s.From("products").Select("id").ToSQL()), []int{1})
 }
 
 // runParams proves that each placeholder style P supports is bound correctly
@@ -87,7 +87,7 @@ func runParams(t *testing.T, conn Conn, s Suite) {
 		t.Helper()
 		var got event
 		MustScan(t, conn,
-			s.From("events").Select("id", "name", "created_at", "updated_at").Where(syntax.Eq("id", id)).ToSql(),
+			s.From("events").Select("id", "name", "created_at", "updated_at").Where(syntax.Eq("id", id)).ToSQL(),
 			nil, &got.id, &got.name, &got.createdAt, &got.updatedAt)
 		if got != want {
 			t.Errorf("got %+v; want %+v", got, want)
@@ -99,7 +99,7 @@ func runParams(t *testing.T, conn Conn, s Suite) {
 		if !s.PositionalParams {
 			t.Skip("driver does not accept positional placeholders")
 		}
-		MustExec(t, conn, insert.Values(syntax.P(), syntax.P(), syntax.P(), syntax.P()).ToSql(), 1, "alice", "t1", "t2")
+		MustExec(t, conn, insert.Values(syntax.P(), syntax.P(), syntax.P(), syntax.P()).ToSQL(), 1, "alice", "t1", "t2")
 		assertEvent(t, 1, event{1, "alice", "t1", "t2"})
 	})
 
@@ -107,7 +107,7 @@ func runParams(t *testing.T, conn Conn, s Suite) {
 		if !s.IndexedParams {
 			t.Skip("placeholders are not numbered")
 		}
-		MustExec(t, conn, insert.Values(syntax.P(3), syntax.P(2), syntax.P(1), syntax.P(1)).ToSql(), "t3", "bob", 2)
+		MustExec(t, conn, insert.Values(syntax.P(3), syntax.P(2), syntax.P(1), syntax.P(1)).ToSQL(), "t3", "bob", 2)
 		assertEvent(t, 2, event{2, "bob", "t3", "t3"})
 	})
 
@@ -115,7 +115,7 @@ func runParams(t *testing.T, conn Conn, s Suite) {
 		if !s.NamedParams {
 			t.Skip("driver does not bind named placeholders")
 		}
-		MustExec(t, conn, insert.Values(syntax.P(":id"), syntax.P(":name"), syntax.P(":at"), syntax.P(":at")).ToSql(),
+		MustExec(t, conn, insert.Values(syntax.P(":id"), syntax.P(":name"), syntax.P(":at"), syntax.P(":at")).ToSQL(),
 			sql.Named("id", 3), sql.Named("name", "carol"), sql.Named("at", "t4"))
 		assertEvent(t, 3, event{3, "carol", "t4", "t4"})
 	})

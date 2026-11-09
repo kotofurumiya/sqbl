@@ -9,32 +9,32 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// SqlInsertBuilder constructs a SQL INSERT statement using a fluent method chain.
+// InsertBuilder constructs a SQL INSERT statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.InsertInto) to create an instance.
 //
 //	q := sqblpg.InsertInto("users").
 //	    Columns("name", "email").
 //	    Values(sqbl.P(1), sqbl.P(2))
-//	sql := q.ToSql()
-type SqlInsertBuilder struct {
-	dialect          dialect.SqlDialect
+//	sql := q.ToSQL()
+type InsertBuilder struct {
+	dialect          dialect.Dialect
 	into             string
 	orConflict       string // SQLite: "REPLACE", "IGNORE", "ABORT", "FAIL", "ROLLBACK"
 	columns          []string
 	rows             []syntax.ValueRow
 	conflictTarget   []string             // columns for ON CONFLICT (col1, col2); nil means no conflict clause
-	conflictWhere    syntax.SqlFragment   // index predicate after the conflict target (partial unique index)
+	conflictWhere    syntax.SQLFragment   // index predicate after the conflict target (partial unique index)
 	conflictAction   string               // "NOTHING" or "UPDATE"
-	conflictSets     []syntax.SqlFragment // assignments for DO UPDATE SET
-	updateWhere      syntax.SqlFragment   // condition after DO UPDATE SET
-	duplicateKeySets []syntax.SqlFragment // assignments for ON DUPLICATE KEY UPDATE (MySQL)
+	conflictSets     []syntax.SQLFragment // assignments for DO UPDATE SET
+	updateWhere      syntax.SQLFragment   // condition after DO UPDATE SET
+	duplicateKeySets []syntax.SQLFragment // assignments for ON DUPLICATE KEY UPDATE (MySQL)
 	returning        []string
 }
 
-var _ SqlBuilder = SqlInsertBuilder{}
+var _ Statement = InsertBuilder{}
 
-// ToSql renders the INSERT statement with a trailing semicolon.
-func (b SqlInsertBuilder) ToSql() string {
+// ToSQL renders the INSERT statement with a trailing semicolon.
+func (b InsertBuilder) ToSQL() string {
 	d := requireDialect(b.dialect)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -44,8 +44,8 @@ func (b SqlInsertBuilder) ToSql() string {
 	return s
 }
 
-// ToSqlWithDialect renders the INSERT statement using the given dialect, without a trailing semicolon.
-func (b SqlInsertBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
+// ToSQLWithDialect renders the INSERT statement using the given dialect, without a trailing semicolon.
+func (b InsertBuilder) ToSQLWithDialect(d dialect.Dialect) string {
 	requireDialect(d)
 	buf := sqlbuf.GetStringBuffer()
 	b.renderSQL(buf, d)
@@ -54,7 +54,7 @@ func (b SqlInsertBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
 	return s
 }
 
-func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b InsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// INSERT [OR conflict] INTO table
 	buf.WriteString("INSERT")
 	if b.orConflict != "" {
@@ -132,7 +132,7 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 }
 
 // appendAssignments writes comma-separated assignments into buf.
-func appendAssignments(buf *bytes.Buffer, d dialect.SqlDialect, sets []syntax.SqlFragment) {
+func appendAssignments(buf *bytes.Buffer, d dialect.Dialect, sets []syntax.SQLFragment) {
 	for i, s := range sets {
 		if i > 0 {
 			buf.WriteString(", ")
@@ -142,8 +142,8 @@ func appendAssignments(buf *bytes.Buffer, d dialect.SqlDialect, sets []syntax.Sq
 }
 
 // rawAssignments wraps raw SQL assignment strings as fragments.
-func rawAssignments(sets []string) []syntax.SqlFragment {
-	frags := make([]syntax.SqlFragment, len(sets))
+func rawAssignments(sets []string) []syntax.SQLFragment {
+	frags := make([]syntax.SQLFragment, len(sets))
 	for i, s := range sets {
 		frags[i] = syntax.Raw(s)
 	}
@@ -151,7 +151,7 @@ func rawAssignments(sets []string) []syntax.SqlFragment {
 }
 
 // renderConflictTarget writes "ON CONFLICT [(cols) [WHERE pred]]" into buf.
-func (b SqlInsertBuilder) renderConflictTarget(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b InsertBuilder) renderConflictTarget(buf *bytes.Buffer, d dialect.Dialect) {
 	buf.WriteString(" ON CONFLICT")
 	if len(b.conflictTarget) == 0 {
 		return
@@ -171,7 +171,7 @@ func (b SqlInsertBuilder) renderConflictTarget(buf *bytes.Buffer, d dialect.SqlD
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlInsertBuilder) Dialect(d dialect.SqlDialect) SqlInsertBuilder {
+func (b InsertBuilder) Dialect(d dialect.Dialect) InsertBuilder {
 	b.dialect = d
 	return b
 }
@@ -179,7 +179,7 @@ func (b SqlInsertBuilder) Dialect(d dialect.SqlDialect) SqlInsertBuilder {
 // Into sets the target table for the INSERT statement.
 //
 //	b.Into("users")
-func (b SqlInsertBuilder) Into(table string) SqlInsertBuilder {
+func (b InsertBuilder) Into(table string) InsertBuilder {
 	b.into = table
 	return b
 }
@@ -188,7 +188,7 @@ func (b SqlInsertBuilder) Into(table string) SqlInsertBuilder {
 // Calling Columns again replaces the previous column list.
 //
 //	b.Columns("name", "email")
-func (b SqlInsertBuilder) Columns(cols ...string) SqlInsertBuilder {
+func (b InsertBuilder) Columns(cols ...string) InsertBuilder {
 	b.columns = slices.Clone(cols)
 	return b
 }
@@ -199,7 +199,7 @@ func (b SqlInsertBuilder) Columns(cols ...string) SqlInsertBuilder {
 //
 //	b.Values(sqbl.P(1), sqbl.P(2))
 //	b.Values(sqbl.P(1), sqbl.P(2)).Values(sqbl.P(3), sqbl.P(4))
-func (b SqlInsertBuilder) Values(vals ...any) SqlInsertBuilder {
+func (b InsertBuilder) Values(vals ...any) InsertBuilder {
 	b.rows = append(append([]syntax.ValueRow(nil), b.rows...), syntax.ValueRow(slices.Clone(vals)))
 	return b
 }
@@ -208,7 +208,7 @@ func (b SqlInsertBuilder) Values(vals ...any) SqlInsertBuilder {
 // Rows that violate a unique or exclusion constraint are silently discarded.
 //
 //	sqblpg.InsertInto("tags").Columns("name").Values(sqbl.P(1)).OnConflictDoNothing()
-func (b SqlInsertBuilder) OnConflictDoNothing() SqlInsertBuilder {
+func (b InsertBuilder) OnConflictDoNothing() InsertBuilder {
 	b.conflictAction = "NOTHING"
 	return b
 }
@@ -219,7 +219,7 @@ func (b SqlInsertBuilder) OnConflictDoNothing() SqlInsertBuilder {
 //	sqblpg.InsertInto("settings").Columns("user_id", "key", "value").
 //	    Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
 //	    OnConflict("user_id", "key").DoUpdateSet("value", "excluded.value")
-func (b SqlInsertBuilder) OnConflict(cols ...string) SqlInsertBuilder {
+func (b InsertBuilder) OnConflict(cols ...string) InsertBuilder {
 	b.conflictTarget = slices.Clone(cols)
 	return b
 }
@@ -228,9 +228,9 @@ func (b SqlInsertBuilder) OnConflict(cols ...string) SqlInsertBuilder {
 // Each argument is written as-is, e.g. `"value" = excluded."value"`.
 // Prefer DoUpdateSet unless the assignment cannot be expressed with it.
 // Calling DoUpdate or DoUpdateSet again appends more assignments.
-func (b SqlInsertBuilder) DoUpdate(sets ...string) SqlInsertBuilder {
+func (b InsertBuilder) DoUpdate(sets ...string) InsertBuilder {
 	b.conflictAction = "UPDATE"
-	b.conflictSets = append(append([]syntax.SqlFragment(nil), b.conflictSets...), rawAssignments(sets)...)
+	b.conflictSets = append(append([]syntax.SQLFragment(nil), b.conflictSets...), rawAssignments(sets)...)
 	return b
 }
 
@@ -247,9 +247,9 @@ func (b SqlInsertBuilder) DoUpdate(sets ...string) SqlInsertBuilder {
 //	    DoUpdateSet("name", "excluded.name").
 //	    DoUpdateSet("updated_at", sqblpg.Fn("NOW"))
 //	// ... ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "updated_at" = NOW()
-func (b SqlInsertBuilder) DoUpdateSet(col string, val any) SqlInsertBuilder {
+func (b InsertBuilder) DoUpdateSet(col string, val any) InsertBuilder {
 	b.conflictAction = "UPDATE"
-	b.conflictSets = append(append([]syntax.SqlFragment(nil), b.conflictSets...), setClause{Col: col, Val: val})
+	b.conflictSets = append(append([]syntax.SQLFragment(nil), b.conflictSets...), setClause{Col: col, Val: val})
 	return b
 }
 
@@ -262,7 +262,7 @@ func (b SqlInsertBuilder) DoUpdateSet(col string, val any) SqlInsertBuilder {
 //	    OnConflict("email").
 //	    OnConflictWhere(sqblpg.Eq("active", 1)).
 //	    DoUpdate(`"name" = excluded."name"`)
-func (b SqlInsertBuilder) OnConflictWhere(expr syntax.SqlFragment) SqlInsertBuilder {
+func (b InsertBuilder) OnConflictWhere(expr syntax.SQLFragment) InsertBuilder {
 	b.conflictWhere = expr
 	return b
 }
@@ -280,7 +280,7 @@ func (b SqlInsertBuilder) OnConflictWhere(expr syntax.SqlFragment) SqlInsertBuil
 //	    OnConflict("id").
 //	    DoUpdate(`"name" = excluded."name"`, `"version" = excluded."version"`).
 //	    DoUpdateWhere(sqblpg.Lt("users.version", "excluded.version"))
-func (b SqlInsertBuilder) DoUpdateWhere(expr syntax.SqlFragment) SqlInsertBuilder {
+func (b InsertBuilder) DoUpdateWhere(expr syntax.SQLFragment) InsertBuilder {
 	b.updateWhere = expr
 	return b
 }
@@ -293,8 +293,8 @@ func (b SqlInsertBuilder) DoUpdateWhere(expr syntax.SqlFragment) SqlInsertBuilde
 //
 //	sqblmysql.InsertInto("tags").Columns("name", "count").Values(sqbl.P(1), sqbl.P(2)).
 //	    OnDuplicateKeyUpdate("`count` = VALUES(`count`)")
-func (b SqlInsertBuilder) OnDuplicateKeyUpdate(sets ...string) SqlInsertBuilder {
-	b.duplicateKeySets = append(append([]syntax.SqlFragment(nil), b.duplicateKeySets...), rawAssignments(sets)...)
+func (b InsertBuilder) OnDuplicateKeyUpdate(sets ...string) InsertBuilder {
+	b.duplicateKeySets = append(append([]syntax.SQLFragment(nil), b.duplicateKeySets...), rawAssignments(sets)...)
 	return b
 }
 
@@ -306,42 +306,42 @@ func (b SqlInsertBuilder) OnDuplicateKeyUpdate(sets ...string) SqlInsertBuilder 
 //	sqblmysql.InsertInto("tags").Columns("name", "count").Values(sqbl.P(1), sqbl.P(2)).
 //	    OnDuplicateKeyUpdateSet("count", sqblmysql.Fn("VALUES", "count"))
 //	// ... ON DUPLICATE KEY UPDATE `count` = VALUES(`count`)
-func (b SqlInsertBuilder) OnDuplicateKeyUpdateSet(col string, val any) SqlInsertBuilder {
-	b.duplicateKeySets = append(append([]syntax.SqlFragment(nil), b.duplicateKeySets...), setClause{Col: col, Val: val})
+func (b InsertBuilder) OnDuplicateKeyUpdateSet(col string, val any) InsertBuilder {
+	b.duplicateKeySets = append(append([]syntax.SQLFragment(nil), b.duplicateKeySets...), setClause{Col: col, Val: val})
 	return b
 }
 
 // OrReplace sets the INSERT OR REPLACE conflict algorithm. Supported by SQLite.
 // Existing rows that conflict are deleted and replaced by the new row.
-func (b SqlInsertBuilder) OrReplace() SqlInsertBuilder {
+func (b InsertBuilder) OrReplace() InsertBuilder {
 	b.orConflict = "REPLACE"
 	return b
 }
 
 // OrIgnore sets the INSERT OR IGNORE conflict algorithm. Supported by SQLite.
 // Rows that violate a constraint are silently discarded.
-func (b SqlInsertBuilder) OrIgnore() SqlInsertBuilder {
+func (b InsertBuilder) OrIgnore() InsertBuilder {
 	b.orConflict = "IGNORE"
 	return b
 }
 
 // OrAbort sets the INSERT OR ABORT conflict algorithm. Supported by SQLite.
 // The current INSERT statement is aborted and changes are rolled back.
-func (b SqlInsertBuilder) OrAbort() SqlInsertBuilder {
+func (b InsertBuilder) OrAbort() InsertBuilder {
 	b.orConflict = "ABORT"
 	return b
 }
 
 // OrFail sets the INSERT OR FAIL conflict algorithm. Supported by SQLite.
 // The INSERT fails with an error but prior changes in the same transaction are retained.
-func (b SqlInsertBuilder) OrFail() SqlInsertBuilder {
+func (b InsertBuilder) OrFail() InsertBuilder {
 	b.orConflict = "FAIL"
 	return b
 }
 
 // OrRollback sets the INSERT OR ROLLBACK conflict algorithm. Supported by SQLite.
 // The entire transaction is rolled back on conflict.
-func (b SqlInsertBuilder) OrRollback() SqlInsertBuilder {
+func (b InsertBuilder) OrRollback() InsertBuilder {
 	b.orConflict = "ROLLBACK"
 	return b
 }
@@ -351,7 +351,7 @@ func (b SqlInsertBuilder) OrRollback() SqlInsertBuilder {
 // Supported by PostgreSQL, SQLite 3.35+, and MariaDB 10.5+.
 //
 //	sqblpg.InsertInto("users").Columns("name").Values(sqbl.P(1)).Returning("id", "created_at")
-func (b SqlInsertBuilder) Returning(cols ...string) SqlInsertBuilder {
+func (b InsertBuilder) Returning(cols ...string) InsertBuilder {
 	b.returning = slices.Clone(cols)
 	return b
 }

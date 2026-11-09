@@ -11,7 +11,7 @@ func TestPredicates(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		fragment SqlFragment
+		fragment SQLFragment
 		want     string
 	}{
 		{"Eq", Eq("a", P(1)), `"a" = $1`},
@@ -57,7 +57,7 @@ func TestLogical(t *testing.T) {
 	a, b, c, d := Eq("a", 1), Eq("b", 2), Eq("c", 3), Eq("d", 4)
 	tests := []struct {
 		name     string
-		fragment SqlFragment
+		fragment SQLFragment
 		want     string
 	}{
 		{"And", And(a, b, c), `"a" = 1 AND "b" = 2 AND "c" = 3`},
