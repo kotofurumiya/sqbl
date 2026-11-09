@@ -12,13 +12,13 @@ import (
 // Use a dialect-specific constructor (e.g. sqblpg.DeleteFrom) to create an instance.
 //
 //	q := sqblpg.DeleteFrom("users").
-//	    Where(sqblpg.Eq("id", sqbl.P(1)))
-//	sql := q.ToSQL()
+//	    Where(sqblpg.Eq("id", sqblpg.P(1)))
+//	sql, err := q.ToSQL()
 type DeleteBuilder struct {
 	dialect   dialect.Dialect
 	from      string
-	where     syntax.SQLFragment
-	returning []string
+	where     []syntax.SQLFragment // ANDed
+	returning []any
 }
 
 var _ Statement = DeleteBuilder{}
@@ -47,21 +47,11 @@ func (b DeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 		d.QuoteIdentifier(buf, b.from)
 	}
 
-	// WHERE condition
-	if b.where != nil {
-		buf.WriteString(" WHERE ")
-		b.where.AppendSQL(buf, d)
-	}
+	writeConditions(buf, d, " WHERE ", b.where)
 
-	// RETURNING col1, col2, ...
 	if len(b.returning) > 0 {
 		buf.WriteString(" RETURNING ")
-		for i, col := range b.returning {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			d.QuoteIdentifier(buf, col)
-		}
+		writeValues(buf, d, b.returning)
 	}
 }
 
@@ -79,19 +69,22 @@ func (b DeleteBuilder) From(table string) DeleteBuilder {
 	return b
 }
 
-// Where sets the WHERE condition.
+// Where adds a WHERE condition.
+// Calling Where again ANDs the new condition with the earlier ones; nil is ignored.
+// Without any condition, every row is deleted.
 //
-//	b.Where(sqblpg.Eq("id", sqbl.P(1)))
+//	b.Where(sqblpg.Eq("id", sqblpg.P(1)))
 func (b DeleteBuilder) Where(expr syntax.SQLFragment) DeleteBuilder {
-	b.where = expr
+	b.where = addCondition(b.where, expr)
 	return b
 }
 
-// Returning adds a RETURNING clause to the DELETE statement.
-// The specified columns are returned for each deleted row.
+// Returning sets the RETURNING list, replacing any earlier list.
+// Each item follows the rules of syntax.AppendValue, so "*" returns every column.
+// Supported by PostgreSQL, SQLite 3.35+, and MariaDB 10.5+.
 //
-//	sqblpg.DeleteFrom("sessions").Where(...).Returning("id", "user_id")
-func (b DeleteBuilder) Returning(cols ...string) DeleteBuilder {
+//	sqblpg.DeleteFrom("sessions").Where(sqblpg.Lt("expires_at", sqblpg.P(1))).Returning("id", "user_id")
+func (b DeleteBuilder) Returning(cols ...any) DeleteBuilder {
 	b.returning = slices.Clone(cols)
 	return b
 }

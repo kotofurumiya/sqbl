@@ -9,19 +9,36 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// cteClause represents a single WITH ... AS (...) entry.
-type cteClause struct {
-	Name      string
-	Builder   SelectBuilder
-	Recursive bool
+// Query is a SELECT statement, alone or combined with set operations.
+// It is what CTEs, set operations and lateral joins accept.
+// It is implemented by SelectBuilder and CompoundBuilder only.
+type Query interface {
+	Statement
+	syntax.Subquery
+	renderer
+
+	// dialectOf returns the dialect the query was built with.
+	dialectOf() dialect.Dialect
+	// writeOperand writes the query as an operand of a set operation,
+	// parenthesized when it would otherwise change the meaning of the compound.
+	// right reports whether the query is to the right of the operator.
+	writeOperand(buf *bytes.Buffer, d dialect.Dialect, right bool)
 }
 
-// setOpClause represents a single set operation entry (UNION, INTERSECT, or EXCEPT).
-// Op is one of "UNION", "INTERSECT", or "EXCEPT".
-type setOpClause struct {
-	Op      string
-	All     bool
-	Builder SelectBuilder
+// cteClause represents a single WITH ... AS (...) entry.
+type cteClause struct {
+	name      string
+	query     Query
+	recursive bool
+}
+
+// joinClause represents a single JOIN entry.
+// kind is one of "INNER", "LEFT", "RIGHT", "FULL OUTER", or "CROSS".
+type joinClause struct {
+	kind    string
+	table   syntax.SQLFragment
+	on      syntax.SQLFragment
+	lateral bool
 }
 
 // SelectBuilder constructs a SQL SELECT statement using a fluent method chain.
@@ -30,30 +47,29 @@ type setOpClause struct {
 //	q := sqblpg.From("users").
 //	    Select("id", "name").
 //	    Where(sqblpg.Eq("active", true)).
-//	    OrderBy("name ASC").
+//	    OrderBy(sqblpg.Asc("name")).
 //	    Limit(20)
-//	sql := q.ToSQL()
+//	sql, err := q.ToSQL()
+//	// SELECT "id", "name" FROM "users" WHERE "active" = TRUE ORDER BY "name" ASC LIMIT 20;
 type SelectBuilder struct {
 	dialect    dialect.Dialect
 	ctes       []cteClause          // WITH ...
 	distinct   bool                 // DISTINCT
-	distinctOn []string             // DISTINCT ON (col1, col2) — PostgreSQL only
-	columns    []syntax.SQLFragment // SELECT ... (Ident | Aliased | any SQLFragment)
-	from       syntax.SQLFragment   // FROM (Ident | SelectBuilder | Aliased | any SQLFragment)
-	joins      []syntax.JoinClause  // JOIN ...
-	where      syntax.SQLFragment   // WHERE ...
+	distinctOn []any                // DISTINCT ON (...) — PostgreSQL only
+	columns    []syntax.SQLFragment // SELECT ...
+	from       syntax.SQLFragment   // FROM ...
+	joins      []joinClause         // JOIN ...
+	where      []syntax.SQLFragment // WHERE ..., ANDed
 	groups     []syntax.SQLFragment // GROUP BY ...
-	having     syntax.SQLFragment   // HAVING ...
+	having     []syntax.SQLFragment // HAVING ..., ANDed
 	orders     []syntax.SQLFragment // ORDER BY ...
 	limit      *int                 // LIMIT
 	offset     *int                 // OFFSET
 	lock       string               // FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY SHARE
 	lockOption string               // NOWAIT, SKIP LOCKED
-	setOps     []setOpClause        // UNION, INTERSECT, EXCEPT (and ALL variants)
 }
 
-var _ syntax.Subquery = SelectBuilder{}
-var _ Statement = SelectBuilder{}
+var _ Query = SelectBuilder{}
 
 // ToSQL renders the statement with the builder's dialect and a trailing semicolon.
 func (b SelectBuilder) ToSQL() (string, error) { return render(b, b.dialect, true) }
@@ -71,8 +87,8 @@ func (b SelectBuilder) MustSQLWithDialect(d dialect.Dialect) string {
 	return must(b.ToSQLWithDialect(d))
 }
 
-// AppendSQL implements syntax.SQLFragment for subquery embedding.
-// Writes the query wrapped in parentheses directly into buf.
+// AppendSQL implements syntax.SQLFragment, writing the query in parentheses
+// so that it can be embedded as a subquery.
 func (b SelectBuilder) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	buf.WriteByte('(')
 	b.renderSQL(buf, d)
@@ -82,44 +98,26 @@ func (b SelectBuilder) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 // IsSubquery implements syntax.Subquery, so IN (subquery) renders single parentheses.
 func (b SelectBuilder) IsSubquery() {}
 
-// renderSQL writes the query (without trailing semicolon) into buf.
-// WriteString/Write calls append directly to the buffer, eliminating intermediate
-// string values and the []string slice that strings.Join would require.
-func (b SelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
-	// WITH [RECURSIVE] name AS (...), ...
-	// Scan once to determine whether RECURSIVE is needed, then render each CTE.
-	if len(b.ctes) > 0 {
-		withKw := "WITH"
-		for _, c := range b.ctes {
-			if c.Recursive {
-				withKw = "WITH RECURSIVE"
-				break
-			}
-		}
-		buf.WriteString(withKw)
-		buf.WriteByte(' ')
-		for i, c := range b.ctes {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			d.Quote(buf, c.Name)
-			buf.WriteString(" AS (")
-			c.Builder.renderSQL(buf, d)
-			buf.WriteByte(')')
-		}
-		buf.WriteByte(' ') // space before SELECT
-	}
+func (b SelectBuilder) dialectOf() dialect.Dialect { return b.dialect }
 
-	// SELECT [DISTINCT [ON (col1, col2)]]
+func (b SelectBuilder) writeOperand(buf *bytes.Buffer, d dialect.Dialect, right bool) {
+	// Trailing clauses would otherwise bind to the whole compound, and a WITH on
+	// the right is not allowed at all without parentheses. A WITH on the leftmost
+	// operand is left bare: it already scopes over the whole compound.
+	if len(b.orders) > 0 || b.limit != nil || b.offset != nil || b.lock != "" || (right && len(b.ctes) > 0) {
+		b.AppendSQL(buf, d)
+		return
+	}
+	b.renderSQL(buf, d)
+}
+
+func (b SelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
+	writeCTEs(buf, d, b.ctes)
+
 	switch {
 	case len(b.distinctOn) > 0:
 		buf.WriteString("SELECT DISTINCT ON (")
-		for i, col := range b.distinctOn {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			d.QuoteIdentifier(buf, col)
-		}
+		writeValues(buf, d, b.distinctOn)
 		buf.WriteByte(')')
 	case b.distinct:
 		buf.WriteString("SELECT DISTINCT")
@@ -127,98 +125,51 @@ func (b SelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 		buf.WriteString("SELECT")
 	}
 
-	// Column list: col1, col2, ... — or * when none are specified.
 	if len(b.columns) > 0 {
 		buf.WriteByte(' ')
-		for i, f := range b.columns {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			f.AppendSQL(buf, d)
-		}
+		writeFragments(buf, d, b.columns)
 	} else {
 		buf.WriteString(" *")
 	}
 
-	// FROM table | subquery | aliased
 	if b.from != nil {
 		buf.WriteString(" FROM ")
 		b.from.AppendSQL(buf, d)
 	}
 
-	// JOIN clauses — each rendered as "KIND JOIN [LATERAL] table [ON cond]".
-	// CROSS JOIN has no ON clause; lateral joins use ON TRUE unless CROSS.
 	for _, j := range b.joins {
 		buf.WriteByte(' ')
+		buf.WriteString(j.kind)
+		buf.WriteString(" JOIN ")
+		if j.lateral {
+			buf.WriteString("LATERAL ")
+		}
+		j.table.AppendSQL(buf, d)
 		switch {
-		case j.Lateral && j.Kind == "CROSS":
-			buf.WriteString("CROSS JOIN LATERAL ")
-			j.Table.AppendSQL(buf, d)
-		case j.Lateral:
-			buf.WriteString(j.Kind)
-			buf.WriteString(" JOIN LATERAL ")
-			j.Table.AppendSQL(buf, d)
+		case j.kind == "CROSS":
+		case j.lateral:
 			buf.WriteString(" ON TRUE")
-		case j.Kind == "CROSS":
-			buf.WriteString("CROSS JOIN ")
-			j.Table.AppendSQL(buf, d)
 		default:
-			buf.WriteString(j.Kind)
-			buf.WriteString(" JOIN ")
-			j.Table.AppendSQL(buf, d)
 			buf.WriteString(" ON ")
-			j.On.AppendSQL(buf, d)
+			j.on.AppendSQL(buf, d)
 		}
 	}
 
-	// WHERE condition
-	if b.where != nil {
-		buf.WriteString(" WHERE ")
-		b.where.AppendSQL(buf, d)
-	}
+	writeConditions(buf, d, " WHERE ", b.where)
 
-	// GROUP BY col1, col2, ...
 	if len(b.groups) > 0 {
 		buf.WriteString(" GROUP BY ")
-		for i, f := range b.groups {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			f.AppendSQL(buf, d)
-		}
+		writeFragments(buf, d, b.groups)
 	}
 
-	// HAVING condition (requires GROUP BY in practice)
-	if b.having != nil {
-		buf.WriteString(" HAVING ")
-		b.having.AppendSQL(buf, d)
-	}
+	writeConditions(buf, d, " HAVING ", b.having)
+	writeOrderLimitOffset(buf, d, b.orders, b.limit, b.offset)
 
-	// ORDER BY col1 ASC, col2 DESC, ...
-	if len(b.orders) > 0 {
-		buf.WriteString(" ORDER BY ")
-		for i, f := range b.orders {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			f.AppendSQL(buf, d)
-		}
+	if b.lock == "" && b.lockOption != "" {
+		method := map[string]string{"NOWAIT": "Nowait", "SKIP LOCKED": "SkipLocked"}[b.lockOption]
+		failFragment(method+" needs a locking clause; add ForUpdate, ForShare, ForNoKeyUpdate or ForKeyShare").
+			AppendSQL(buf, d)
 	}
-
-	// LIMIT / OFFSET — AppendInt writes digits directly into buf without
-	// allocating an intermediate string the way strconv.Itoa would.
-	var tmp [20]byte
-	if b.limit != nil {
-		buf.WriteString(" LIMIT ")
-		buf.Write(strconv.AppendInt(tmp[:0], int64(*b.limit), 10))
-	}
-	if b.offset != nil {
-		buf.WriteString(" OFFSET ")
-		buf.Write(strconv.AppendInt(tmp[:0], int64(*b.offset), 10))
-	}
-
-	// Locking clause: FOR UPDATE / FOR SHARE / FOR NO KEY UPDATE / FOR KEY SHARE
-	// with optional NOWAIT or SKIP LOCKED modifier.
 	if b.lock != "" {
 		buf.WriteByte(' ')
 		buf.WriteString(b.lock)
@@ -227,133 +178,160 @@ func (b SelectBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 			buf.WriteString(b.lockOption)
 		}
 	}
+}
 
-	// Set operations: UNION [ALL] / INTERSECT [ALL] / EXCEPT [ALL]
-	for _, u := range b.setOps {
-		buf.WriteByte(' ')
-		buf.WriteString(u.Op)
-		if u.All {
-			buf.WriteString(" ALL")
-		}
-		buf.WriteByte(' ')
-		u.Builder.renderSQL(buf, d)
+// writeCTEs writes the WITH clause followed by a space, or nothing when ctes is empty.
+// One recursive CTE makes the whole clause WITH RECURSIVE, as SQL requires.
+func writeCTEs(buf *bytes.Buffer, d dialect.Dialect, ctes []cteClause) {
+	if len(ctes) == 0 {
+		return
 	}
+	buf.WriteString("WITH ")
+	if slices.ContainsFunc(ctes, func(c cteClause) bool { return c.recursive }) {
+		buf.WriteString("RECURSIVE ")
+	}
+	for i, c := range ctes {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		d.Quote(buf, c.name)
+		buf.WriteString(" AS (")
+		c.query.renderSQL(buf, d)
+		buf.WriteByte(')')
+	}
+	buf.WriteByte(' ')
+}
+
+// writeFragments writes frags separated by ", ".
+func writeFragments(buf *bytes.Buffer, d dialect.Dialect, frags []syntax.SQLFragment) {
+	for i, f := range frags {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		f.AppendSQL(buf, d)
+	}
+}
+
+// writeOrderLimitOffset writes the ORDER BY, LIMIT and OFFSET clauses that are set.
+func writeOrderLimitOffset(buf *bytes.Buffer, d dialect.Dialect, orders []syntax.SQLFragment, limit, offset *int) {
+	if len(orders) > 0 {
+		buf.WriteString(" ORDER BY ")
+		writeFragments(buf, d, orders)
+	}
+	if limit != nil {
+		buf.WriteString(" LIMIT ")
+		buf.WriteString(strconv.Itoa(*limit))
+	}
+	if offset != nil {
+		buf.WriteString(" OFFSET ")
+		buf.WriteString(strconv.Itoa(*offset))
+	}
+}
+
+// toFragments converts each value with syntax.ToFragment.
+func toFragments(vals []any) []syntax.SQLFragment {
+	frags := make([]syntax.SQLFragment, len(vals))
+	for i, v := range vals {
+		frags[i] = syntax.ToFragment(v)
+	}
+	return frags
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
 // Dialect-specific constructors (e.g. sqblpg.From) call this automatically.
-//
-//	b.Dialect(pgDialect)
 func (b SelectBuilder) Dialect(d dialect.Dialect) SelectBuilder {
 	b.dialect = d
 	return b
 }
 
-// From sets the FROM clause.
-// Accepts a table name string, an aliased expression, or a subquery.
+// From sets the FROM clause, replacing any earlier one.
+// It accepts a table name, an aliased source, or a subquery; nil fails the render.
 //
 //	sqblpg.From("users")
-//	sqblpg.From(sqbl.As("users", "u"))
-//	sqblpg.From(sqbl.As(subquery, "sub"))
+//	sqblpg.From(sqblpg.As("users", "u"))
+//	sqblpg.From(sqblpg.As(subquery, "sub"))
 func (b SelectBuilder) From(table any) SelectBuilder {
-	b.from = syntax.ToFragment(table)
+	b.from = source("From", table)
 	return b
 }
 
-// Select sets the columns to retrieve.
-// Each column accepts the same values as syntax.AppendValue; a plain string is an identifier.
-// Calling Select again replaces the previous column list.
+// Select sets the columns to retrieve, replacing any earlier list.
+// Each column follows the rules of syntax.AppendValue; a plain string is an identifier.
+// With no columns, the query selects *.
 //
-//	b.Select("id", "name")
-//	b.Select(sqbl.As(sqbl.Fn("SUM", "amount"), "total"))
+//	b.Select("id", "u.name")
+//	b.Select(sqblpg.As(sqblpg.Fn("SUM", "amount"), "total"))
+//	// SELECT SUM("amount") AS "total"
 func (b SelectBuilder) Select(columns ...any) SelectBuilder {
-	cols := make([]syntax.SQLFragment, len(columns))
-	for i, col := range columns {
-		cols[i] = syntax.ToFragment(col)
-	}
-	b.columns = cols
+	b.columns = toFragments(columns)
 	return b
 }
 
-// Join adds an INNER JOIN clause. It is an alias for InnerJoin.
+// Where adds a WHERE condition.
+// Calling Where again ANDs the new condition with the earlier ones, so a shared
+// base query can only be narrowed. A nil condition is ignored.
 //
-//	b.Join(sqbl.As("orders", "o"), sqbl.Eq("u.id", "o.user_id"))
-//	// INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
-func (b SelectBuilder) Join(table any, on syntax.SQLFragment) SelectBuilder {
-	return b.InnerJoin(table, on)
-}
-
-// Where sets the WHERE condition.
-// Use dialect-specific helpers (e.g. sqblpg.Eq, sqblpg.Gt) to build conditions.
-// Combine multiple conditions explicitly with And or Or.
-//
-//	b.Where(sqblpg.Eq("status", sqblpg.P(1)))
-//	b.Where(sqblpg.And(sqblpg.Eq("status", sqblpg.P(1)), sqblpg.Gt("age", 18)))
+//	b.Where(sqblpg.Eq("status", sqblpg.P(1))).Where(sqblpg.Gt("age", 18))
+//	// WHERE "status" = $1 AND "age" > 18
 func (b SelectBuilder) Where(expr syntax.SQLFragment) SelectBuilder {
-	b.where = expr
+	b.where = addCondition(b.where, expr)
 	return b
 }
 
 // Distinct adds the DISTINCT keyword to the SELECT clause.
+// DistinctOn takes precedence when both are set.
 //
 //	sqblpg.From("users").Select("country").Distinct()
-//	// SELECT DISTINCT country FROM users
+//	// SELECT DISTINCT "country" FROM "users"
 func (b SelectBuilder) Distinct() SelectBuilder {
 	b.distinct = true
 	return b
 }
 
-// DistinctOn sets the DISTINCT ON columns. Supported by PostgreSQL.
-// Rows are deduplicated based on the specified columns; the first row for each group is kept.
-// ORDER BY should be used to control which row is considered "first".
+// DistinctOn sets the DISTINCT ON expressions, replacing any earlier list. Supported by PostgreSQL.
+// Each item follows the rules of syntax.AppendValue; a plain string is an identifier.
+// Rows are deduplicated on these expressions, keeping the first row of each group
+// as ordered by ORDER BY. It takes precedence over Distinct.
 //
-//	sqblpg.From("orders").Select("user_id", "amount").DistinctOn("user_id").OrderBy(sqblpg.Desc("amount"))
-//	// SELECT DISTINCT ON ("user_id") "user_id", "amount" FROM "orders" ORDER BY "amount" DESC
-func (b SelectBuilder) DistinctOn(cols ...string) SelectBuilder {
+//	sqblpg.From("orders").Select("user_id", "amount").DistinctOn("user_id").OrderBy("user_id", sqblpg.Desc("amount"))
+//	// SELECT DISTINCT ON ("user_id") "user_id", "amount" FROM "orders" ORDER BY "user_id", "amount" DESC
+func (b SelectBuilder) DistinctOn(cols ...any) SelectBuilder {
 	b.distinctOn = slices.Clone(cols)
 	return b
 }
 
-// GroupBy sets the GROUP BY columns or expressions.
-// Each item accepts the same values as syntax.AppendValue; a plain string is an identifier.
+// GroupBy sets the GROUP BY items, replacing any earlier list.
+// Each item follows the rules of syntax.AppendValue; a plain string is an identifier.
 //
 //	b.GroupBy("department", "role")
-//	b.GroupBy(sqbl.Raw(`EXTRACT(year FROM "created_at")`))
+//	b.GroupBy(sqblpg.Raw(`EXTRACT(year FROM "created_at")`))
 func (b SelectBuilder) GroupBy(cols ...any) SelectBuilder {
-	groups := make([]syntax.SQLFragment, len(cols))
-	for i, col := range cols {
-		groups[i] = syntax.ToFragment(col)
-	}
-	b.groups = groups
+	b.groups = toFragments(cols)
 	return b
 }
 
-// Having sets the HAVING condition, applied after grouping.
-// Use dialect-specific helpers to build conditions.
-// Combine multiple conditions explicitly with And or Or.
+// Having adds a HAVING condition, applied after grouping.
+// Calling Having again ANDs the new condition with the earlier ones. A nil condition is ignored.
 //
 //	b.Having(sqblpg.Gt(sqblpg.Fn("SUM", "amount"), 1000))
 //	// HAVING SUM("amount") > 1000
 func (b SelectBuilder) Having(expr syntax.SQLFragment) SelectBuilder {
-	b.having = expr
+	b.having = addCondition(b.having, expr)
 	return b
 }
 
-// OrderBy sets the ORDER BY columns.
-// Accepts column name strings or Order expressions (syntax.Asc / syntax.Desc).
+// OrderBy sets the ORDER BY items, replacing any earlier list.
+// Each item follows the rules of syntax.AppendValue: pass syntax.Asc or syntax.Desc
+// for a direction, since a plain string such as "name DESC" is quoted as one identifier.
 //
-//	b.OrderBy(syntax.Asc("name"), syntax.Desc("created_at"))
-//	// ORDER BY name ASC, created_at DESC
+//	b.OrderBy(sqblpg.Asc("name"), sqblpg.Desc("created_at"))
+//	// ORDER BY "name" ASC, "created_at" DESC
 func (b SelectBuilder) OrderBy(cols ...any) SelectBuilder {
-	orders := make([]syntax.SQLFragment, len(cols))
-	for i, col := range cols {
-		orders[i] = syntax.ToFragment(col)
-	}
-	b.orders = orders
+	b.orders = toFragments(cols)
 	return b
 }
 
-// Limit sets the maximum number of rows to return.
+// Limit sets the maximum number of rows to return, replacing any earlier limit.
 //
 //	b.Limit(20)
 //	// LIMIT 20
@@ -362,7 +340,8 @@ func (b SelectBuilder) Limit(n int) SelectBuilder {
 	return b
 }
 
-// Offset sets the number of rows to skip before returning results.
+// Offset sets the number of rows to skip, replacing any earlier offset.
+// OFFSET without LIMIT is accepted by PostgreSQL only; MySQL and SQLite need a LIMIT as well.
 //
 //	b.Limit(20).Offset(40)
 //	// LIMIT 20 OFFSET 40
@@ -371,8 +350,8 @@ func (b SelectBuilder) Offset(n int) SelectBuilder {
 	return b
 }
 
-// ForUpdate appends a FOR UPDATE locking clause to the query.
-// Locks selected rows for the duration of the current transaction.
+// ForUpdate sets the locking clause to FOR UPDATE, replacing any earlier lock.
+// Selected rows are locked for the rest of the transaction.
 //
 //	b.ForUpdate()
 //	// SELECT ... FOR UPDATE
@@ -381,8 +360,9 @@ func (b SelectBuilder) ForUpdate() SelectBuilder {
 	return b
 }
 
-// ForShare appends a FOR SHARE locking clause to the query.
-// Allows concurrent reads but prevents modification of selected rows.
+// ForShare sets the locking clause to FOR SHARE, replacing any earlier lock.
+// Other transactions can still read the rows but cannot modify them.
+// Supported by PostgreSQL and MySQL 8.0+; MariaDB uses LOCK IN SHARE MODE instead.
 //
 //	b.ForShare()
 //	// SELECT ... FOR SHARE
@@ -391,8 +371,8 @@ func (b SelectBuilder) ForShare() SelectBuilder {
 	return b
 }
 
-// ForNoKeyUpdate appends a FOR NO KEY UPDATE locking clause.
-// Weaker than FOR UPDATE; does not block INSERT of rows referencing this table.
+// ForNoKeyUpdate sets the locking clause to FOR NO KEY UPDATE, replacing any earlier lock.
+// Weaker than FOR UPDATE: it does not block inserts that reference the rows. PostgreSQL only.
 //
 //	b.ForNoKeyUpdate()
 //	// SELECT ... FOR NO KEY UPDATE
@@ -401,8 +381,8 @@ func (b SelectBuilder) ForNoKeyUpdate() SelectBuilder {
 	return b
 }
 
-// ForKeyShare appends a FOR KEY SHARE locking clause.
-// Weakest lock; only blocks DELETE and UPDATE of key columns.
+// ForKeyShare sets the locking clause to FOR KEY SHARE, replacing any earlier lock.
+// The weakest lock: it only blocks deletes and key updates. PostgreSQL only.
 //
 //	b.ForKeyShare()
 //	// SELECT ... FOR KEY SHARE
@@ -411,8 +391,8 @@ func (b SelectBuilder) ForKeyShare() SelectBuilder {
 	return b
 }
 
-// Nowait adds the NOWAIT option to the locking clause.
-// The query fails immediately if any selected row cannot be locked.
+// Nowait makes the locking clause fail immediately instead of waiting for locked rows.
+// It replaces SkipLocked, and rendering fails unless a locking clause such as ForUpdate is set.
 //
 //	b.ForUpdate().Nowait()
 //	// SELECT ... FOR UPDATE NOWAIT
@@ -421,8 +401,8 @@ func (b SelectBuilder) Nowait() SelectBuilder {
 	return b
 }
 
-// SkipLocked adds the SKIP LOCKED option to the locking clause.
-// Rows that cannot be immediately locked are silently skipped.
+// SkipLocked makes the locking clause skip rows that are already locked.
+// It replaces Nowait, and rendering fails unless a locking clause such as ForUpdate is set.
 //
 //	b.ForUpdate().SkipLocked()
 //	// SELECT ... FOR UPDATE SKIP LOCKED
@@ -431,188 +411,152 @@ func (b SelectBuilder) SkipLocked() SelectBuilder {
 	return b
 }
 
-// InnerJoin adds an INNER JOIN clause.
+// addJoin returns b with j appended to its joins.
+func (b SelectBuilder) addJoin(j joinClause) SelectBuilder {
+	b.joins = append(slices.Clone(b.joins), j)
+	return b
+}
+
+// joinWithOn builds a join that requires an ON condition; a nil condition fails the render.
+func joinWithOn(method, kind string, table any, on syntax.SQLFragment) joinClause {
+	if on == nil {
+		on = failFragment(method + " needs an ON condition; use CrossJoin to join without one")
+	}
+	return joinClause{kind: kind, table: source(method, table), on: on}
+}
+
+// Join adds an INNER JOIN clause. It is an alias for InnerJoin.
 //
-//	b.InnerJoin(sqbl.As("orders", "o"), "u.id = o.user_id")
-//	// INNER JOIN orders AS o ON u.id = o.user_id
+//	b.Join(sqblpg.As("orders", "o"), sqblpg.Eq("u.id", "o.user_id"))
+//	// INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
+func (b SelectBuilder) Join(table any, on syntax.SQLFragment) SelectBuilder {
+	return b.addJoin(joinWithOn("Join", "INNER", table, on))
+}
+
+// InnerJoin adds an INNER JOIN clause after any earlier joins.
+// on is required; rendering fails when it is nil.
+//
+//	b.InnerJoin(sqblpg.As("orders", "o"), sqblpg.Eq("u.id", "o.user_id"))
+//	// INNER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
 func (b SelectBuilder) InnerJoin(table any, on syntax.SQLFragment) SelectBuilder {
-	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
-		Kind:  "INNER",
-		Table: syntax.ToFragment(table),
-		On:    on,
-	})
-	return b
+	return b.addJoin(joinWithOn("InnerJoin", "INNER", table, on))
 }
 
-// LeftJoin adds a LEFT JOIN clause.
+// LeftJoin adds a LEFT JOIN clause after any earlier joins.
+// on is required; rendering fails when it is nil.
 //
-//	b.LeftJoin(sqbl.As("profiles", "p"), sqbl.Eq("u.id", "p.user_id"))
-//	// LEFT JOIN profiles AS p ON u.id = p.user_id
+//	b.LeftJoin(sqblpg.As("profiles", "p"), sqblpg.Eq("u.id", "p.user_id"))
+//	// LEFT JOIN "profiles" AS "p" ON "u"."id" = "p"."user_id"
 func (b SelectBuilder) LeftJoin(table any, on syntax.SQLFragment) SelectBuilder {
-	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
-		Kind:  "LEFT",
-		Table: syntax.ToFragment(table),
-		On:    on,
-	})
-	return b
+	return b.addJoin(joinWithOn("LeftJoin", "LEFT", table, on))
 }
 
-// CrossJoin adds a CROSS JOIN clause.
-// No ON condition is required for a cross join.
+// RightJoin adds a RIGHT JOIN clause after any earlier joins.
+// on is required; rendering fails when it is nil.
+//
+//	b.RightJoin(sqblpg.As("orders", "o"), sqblpg.Eq("u.id", "o.user_id"))
+//	// RIGHT JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
+func (b SelectBuilder) RightJoin(table any, on syntax.SQLFragment) SelectBuilder {
+	return b.addJoin(joinWithOn("RightJoin", "RIGHT", table, on))
+}
+
+// FullJoin adds a FULL OUTER JOIN clause after any earlier joins.
+// on is required; rendering fails when it is nil. Not supported by MySQL.
+//
+//	b.FullJoin(sqblpg.As("orders", "o"), sqblpg.Eq("u.id", "o.user_id"))
+//	// FULL OUTER JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
+func (b SelectBuilder) FullJoin(table any, on syntax.SQLFragment) SelectBuilder {
+	return b.addJoin(joinWithOn("FullJoin", "FULL OUTER", table, on))
+}
+
+// CrossJoin adds a CROSS JOIN clause after any earlier joins. It has no ON condition.
 //
 //	b.CrossJoin("sizes")
-//	// CROSS JOIN sizes
+//	// CROSS JOIN "sizes"
 func (b SelectBuilder) CrossJoin(table any) SelectBuilder {
-	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
-		Kind:  "CROSS",
-		Table: syntax.ToFragment(table),
-		On:    nil,
-	})
-	return b
+	return b.addJoin(joinClause{kind: "CROSS", table: source("CrossJoin", table)})
 }
 
-// With adds a Common Table Expression (CTE) to the query.
-// The CTE is rendered as a WITH clause before the main SELECT.
-// The name is quoted as a single identifier.
-//
-//	recent := sqblpg.From("orders").Where(sqblpg.Gte("created_at", "2025-01-01"))
-//	b.With("recent_orders", recent)
-//	// WITH "recent_orders" AS (SELECT ...) SELECT ...
-func (b SelectBuilder) With(name string, q SelectBuilder) SelectBuilder {
-	b.ctes = append(append([]cteClause(nil), b.ctes...), cteClause{Name: name, Builder: q})
-	return b
-}
-
-// WithRecursive adds a recursive CTE to the query.
-// The WITH clause is rendered as WITH RECURSIVE when this is used.
-// Use this for hierarchical or iterative queries.
-//
-//	base := sqblpg.From("employees").Select("id", "manager_id").Where(sqblpg.IsNull("manager_id"))
-//	recursive := sqblpg.From("employees").Join(sqblpg.As("org", "o"), sqblpg.Eq("employees.manager_id", "o.id")).Select("employees.id", "employees.manager_id")
-//	b.WithRecursive("org", base.Union(recursive))
-//	// WITH RECURSIVE "org" AS (...) SELECT ...
-func (b SelectBuilder) WithRecursive(name string, q SelectBuilder) SelectBuilder {
-	b.ctes = append(append([]cteClause(nil), b.ctes...), cteClause{Name: name, Builder: q, Recursive: true})
-	return b
-}
-
-// LeftLateralJoin adds a LEFT JOIN LATERAL clause (PostgreSQL and MySQL).
-// The lateral subquery can reference columns from earlier FROM/JOIN items.
-// The ON condition is automatically set to TRUE.
+// LeftLateralJoin adds a LEFT JOIN LATERAL clause after any earlier joins.
+// The subquery can reference columns of earlier FROM and JOIN items, and the ON
+// condition is always TRUE. Supported by PostgreSQL and MySQL 8.0.14+, not by MariaDB or SQLite.
 //
 //	sqblpg.From(sqblpg.As("users", "u")).LeftLateralJoin(
 //	    sqblpg.From("orders").Select("amount").Where(sqblpg.Eq("user_id", "u.id")).Limit(1),
 //	    "latest",
 //	)
-//	// FROM "users" AS "u" LEFT JOIN LATERAL (SELECT ...) AS "latest" ON TRUE
-func (b SelectBuilder) LeftLateralJoin(subquery SelectBuilder, alias string) SelectBuilder {
-	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
-		Kind:    "LEFT",
-		Table:   syntax.As(subquery, alias),
-		Lateral: true,
-	})
-	return b
+//	// SELECT * FROM "users" AS "u" LEFT JOIN LATERAL
+//	//   (SELECT "amount" FROM "orders" WHERE "user_id" = "u"."id" LIMIT 1) AS "latest" ON TRUE
+func (b SelectBuilder) LeftLateralJoin(subquery Query, alias string) SelectBuilder {
+	return b.addJoin(joinClause{kind: "LEFT", table: syntax.As(subquery, alias), lateral: true})
 }
 
-// CrossLateralJoin adds a CROSS JOIN LATERAL clause (PostgreSQL and MySQL).
-// Equivalent to an INNER JOIN LATERAL (rows with no match are excluded).
+// CrossLateralJoin adds a CROSS JOIN LATERAL clause after any earlier joins.
+// Rows for which the subquery returns nothing are dropped, as with an inner join.
+// Supported by PostgreSQL and MySQL 8.0.14+, not by MariaDB or SQLite.
 //
 //	sqblpg.From(sqblpg.As("users", "u")).CrossLateralJoin(
 //	    sqblpg.From("orders").Select("amount").Where(sqblpg.Eq("user_id", "u.id")).Limit(1),
 //	    "latest",
 //	)
-//	// FROM "users" AS "u" CROSS JOIN LATERAL (SELECT ...) AS "latest"
-func (b SelectBuilder) CrossLateralJoin(subquery SelectBuilder, alias string) SelectBuilder {
-	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
-		Kind:    "CROSS",
-		Table:   syntax.As(subquery, alias),
-		Lateral: true,
-	})
+//	// SELECT * FROM "users" AS "u" CROSS JOIN LATERAL
+//	//   (SELECT "amount" FROM "orders" WHERE "user_id" = "u"."id" LIMIT 1) AS "latest"
+func (b SelectBuilder) CrossLateralJoin(subquery Query, alias string) SelectBuilder {
+	return b.addJoin(joinClause{kind: "CROSS", table: syntax.As(subquery, alias), lateral: true})
+}
+
+// With adds a common table expression after any earlier ones.
+// The name is quoted as a single identifier, and q may be a single SELECT or a compound.
+//
+//	recent := sqblpg.From("orders").Where(sqblpg.Gte("created_at", sqblpg.P(1)))
+//	sqblpg.From("recent_orders").With("recent_orders", recent)
+//	// WITH "recent_orders" AS (SELECT * FROM "orders" WHERE "created_at" >= $1) SELECT * FROM "recent_orders"
+func (b SelectBuilder) With(name string, q Query) SelectBuilder {
+	b.ctes = append(slices.Clone(b.ctes), cteClause{name: name, query: q})
 	return b
 }
 
-// Union appends a UNION clause with another query.
-// Duplicate rows are removed from the combined result set.
+// WithRecursive adds a recursive common table expression after any earlier ones.
+// The whole clause becomes WITH RECURSIVE when any CTE is recursive.
+// q is usually an anchor query combined with a recursive step by UnionAll.
 //
-//	b.Union(sqblpg.From("archived_users").Select("id", "name"))
-//	// SELECT ... UNION SELECT ...
-func (b SelectBuilder) Union(q SelectBuilder) SelectBuilder {
-	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "UNION", All: false, Builder: q})
+//	anchor := sqblpg.From("employees").Select("id", "manager_id").Where(sqblpg.IsNull("manager_id"))
+//	step := sqblpg.From(sqblpg.As("employees", "e")).Select("e.id", "e.manager_id").
+//	    InnerJoin(sqblpg.As("org", "o"), sqblpg.Eq("e.manager_id", "o.id"))
+//	sqblpg.From("org").WithRecursive("org", anchor.UnionAll(step))
+//	// WITH RECURSIVE "org" AS (SELECT ... UNION ALL SELECT ...) SELECT * FROM "org"
+func (b SelectBuilder) WithRecursive(name string, q Query) SelectBuilder {
+	b.ctes = append(slices.Clone(b.ctes), cteClause{name: name, query: q, recursive: true})
 	return b
 }
 
-// UnionAll appends a UNION ALL clause with another query.
-// All rows including duplicates are included in the combined result set.
+// Union combines the query with q by UNION, removing duplicate rows.
+// The result is a CompoundBuilder, whose OrderBy and Limit apply to the combined rows.
 //
-//	b.UnionAll(sqblpg.From("archived_users").Select("id", "name"))
-//	// SELECT ... UNION ALL SELECT ...
-func (b SelectBuilder) UnionAll(q SelectBuilder) SelectBuilder {
-	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "UNION", All: true, Builder: q})
-	return b
+//	sqblpg.From("users").Select("id").Union(sqblpg.From("archived_users").Select("id"))
+//	// SELECT "id" FROM "users" UNION SELECT "id" FROM "archived_users"
+func (b SelectBuilder) Union(q Query) CompoundBuilder { return newCompound(b, "UNION", q) }
+
+// UnionAll combines the query with q by UNION ALL, keeping duplicate rows.
+// See Union for how the result behaves.
+func (b SelectBuilder) UnionAll(q Query) CompoundBuilder { return newCompound(b, "UNION ALL", q) }
+
+// Intersect combines the query with q by INTERSECT, keeping rows present in both.
+// See Union for how the result behaves.
+func (b SelectBuilder) Intersect(q Query) CompoundBuilder { return newCompound(b, "INTERSECT", q) }
+
+// IntersectAll combines the query with q by INTERSECT ALL, keeping duplicates.
+// Not supported by SQLite or MySQL.
+func (b SelectBuilder) IntersectAll(q Query) CompoundBuilder {
+	return newCompound(b, "INTERSECT ALL", q)
 }
 
-// RightJoin adds a RIGHT JOIN clause.
-//
-//	b.RightJoin(sqbl.As("orders", "o"), sqbl.Eq("u.id", "o.user_id"))
-//	// RIGHT JOIN orders AS o ON u.id = o.user_id
-func (b SelectBuilder) RightJoin(table any, on syntax.SQLFragment) SelectBuilder {
-	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
-		Kind:  "RIGHT",
-		Table: syntax.ToFragment(table),
-		On:    on,
-	})
-	return b
-}
+// Except combines the query with q by EXCEPT, keeping rows absent from q.
+// See Union for how the result behaves.
+func (b SelectBuilder) Except(q Query) CompoundBuilder { return newCompound(b, "EXCEPT", q) }
 
-// FullJoin adds a FULL OUTER JOIN clause.
-//
-//	b.FullJoin(sqbl.As("orders", "o"), sqbl.Eq("u.id", "o.user_id"))
-//	// FULL OUTER JOIN orders AS o ON u.id = o.user_id
-func (b SelectBuilder) FullJoin(table any, on syntax.SQLFragment) SelectBuilder {
-	b.joins = append(append([]syntax.JoinClause(nil), b.joins...), syntax.JoinClause{
-		Kind:  "FULL OUTER",
-		Table: syntax.ToFragment(table),
-		On:    on,
-	})
-	return b
-}
-
-// Intersect appends an INTERSECT clause with another query.
-// Returns only rows present in both result sets.
-//
-//	b.Intersect(sqblpg.From("premium_users").Select("id"))
-//	// SELECT ... INTERSECT SELECT ...
-func (b SelectBuilder) Intersect(q SelectBuilder) SelectBuilder {
-	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "INTERSECT", All: false, Builder: q})
-	return b
-}
-
-// IntersectAll appends an INTERSECT ALL clause with another query.
-// Returns all rows present in both result sets, including duplicates.
-//
-//	b.IntersectAll(sqblpg.From("premium_users").Select("id"))
-//	// SELECT ... INTERSECT ALL SELECT ...
-func (b SelectBuilder) IntersectAll(q SelectBuilder) SelectBuilder {
-	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "INTERSECT", All: true, Builder: q})
-	return b
-}
-
-// Except appends an EXCEPT clause with another query.
-// Returns rows from the first result set that are not in the second.
-//
-//	b.Except(sqblpg.From("banned_users").Select("id"))
-//	// SELECT ... EXCEPT SELECT ...
-func (b SelectBuilder) Except(q SelectBuilder) SelectBuilder {
-	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "EXCEPT", All: false, Builder: q})
-	return b
-}
-
-// ExceptAll appends an EXCEPT ALL clause with another query.
-// Returns all rows from the first result set not in the second, including duplicates.
-//
-//	b.ExceptAll(sqblpg.From("banned_users").Select("id"))
-//	// SELECT ... EXCEPT ALL SELECT ...
-func (b SelectBuilder) ExceptAll(q SelectBuilder) SelectBuilder {
-	b.setOps = append(append([]setOpClause(nil), b.setOps...), setOpClause{Op: "EXCEPT", All: true, Builder: q})
-	return b
+// ExceptAll combines the query with q by EXCEPT ALL, keeping duplicates.
+// Not supported by SQLite or MySQL.
+func (b SelectBuilder) ExceptAll(q Query) CompoundBuilder {
+	return newCompound(b, "EXCEPT ALL", q)
 }

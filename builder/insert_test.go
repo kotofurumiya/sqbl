@@ -52,6 +52,11 @@ func TestInsertBuilder_Values(t *testing.T) {
 			b:    users.Values(syntax.P(1), syntax.P(2)).Returning("id", "created_at"),
 			want: `INSERT INTO "users" ("name", "email") VALUES ($1, $2) RETURNING "id", "created_at";`,
 		},
+		{
+			name: "returning star and expressions, replaced by a later call",
+			b:    users.Values(syntax.P(1), syntax.P(2)).Returning("old").Returning("*", syntax.As(syntax.Fn("NOW"), "at")),
+			want: `INSERT INTO "users" ("name", "email") VALUES ($1, $2) RETURNING *, NOW() AS "at";`,
+		},
 	})
 }
 
@@ -72,15 +77,13 @@ func TestInsertBuilder_ConflictHandling(t *testing.T) {
 			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2) ON CONFLICT ("name") WHERE "active" = TRUE DO NOTHING;`,
 		},
 		{
-			// An index predicate without target columns is invalid SQL.
-			name: "index predicate is dropped without target",
-			b:    tags.OnConflictWhere(syntax.Eq("active", true)).OnConflictDoNothing(),
-			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2) ON CONFLICT DO NOTHING;`,
-		},
-		{
-			name: "target alone renders nothing",
-			b:    tags.OnConflict("name"),
-			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2);`,
+			name: "index predicates accumulate with and",
+			b: tags.OnConflict("name").
+				OnConflictWhere(syntax.Eq("active", true)).OnConflictWhere(nil).OnConflictWhere(syntax.IsNull("deleted_at")).
+				OnConflictDoNothing(),
+			want: `
+				INSERT INTO "tags" ("name", "count") VALUES ($1, $2)
+				ON CONFLICT ("name") WHERE "active" = TRUE AND "deleted_at" IS NULL DO NOTHING;`,
 		},
 		{
 			name: "do update with raw and structured assignments in call order",
@@ -106,9 +109,13 @@ func TestInsertBuilder_ConflictHandling(t *testing.T) {
 				WHERE "tags"."count" < "excluded"."count";`,
 		},
 		{
-			name: "update condition alone renders nothing",
-			b:    tags.OnConflict("name").DoUpdateWhere(syntax.Eq("a", 1)),
-			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2);`,
+			name: "update conditions accumulate with and",
+			b: tags.OnConflict("name").DoUpdateSet("count", "excluded.count").
+				DoUpdateWhere(syntax.Gt("excluded.count", 0)).DoUpdateWhere(syntax.Lt("tags.count", "excluded.count")),
+			want: `
+				INSERT INTO "tags" ("name", "count") VALUES ($1, $2)
+				ON CONFLICT ("name") DO UPDATE SET "count" = "excluded"."count"
+				WHERE "excluded"."count" > 0 AND "tags"."count" < "excluded"."count";`,
 		},
 
 		// ON DUPLICATE KEY UPDATE (MySQL)
@@ -129,6 +136,15 @@ func TestInsertBuilder_ConflictHandling(t *testing.T) {
 		{"or fail", tags.OrFail(), `INSERT OR FAIL INTO "tags" ("name", "count") VALUES ($1, $2);`},
 		{"or rollback", tags.OrRollback(), `INSERT OR ROLLBACK INTO "tags" ("name", "count") VALUES ($1, $2);`},
 		{"later algorithm wins", tags.OrReplace().OrIgnore(), `INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2);`},
+	})
+
+	// An upsert clause that cannot be completed would change what the statement
+	// does if it were dropped, so it fails instead.
+	runErrCases(t, []errCase{
+		{"target without action", tags.OnConflict("name"), "OnConflict needs an action"},
+		{"index predicate without target", tags.OnConflictWhere(syntax.Eq("active", true)).OnConflictDoNothing(), "OnConflictWhere needs conflict target columns"},
+		{"update condition without update", tags.OnConflict("name").OnConflictDoNothing().DoUpdateWhere(syntax.Eq("a", 1)), "DoUpdateWhere needs an update"},
+		{"do nothing with do update", tags.OnConflict("name").OnConflictDoNothing().DoUpdateSet("count", 1), "OnConflictDoNothing cannot be combined"},
 	})
 }
 

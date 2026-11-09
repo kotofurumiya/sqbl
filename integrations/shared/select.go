@@ -340,7 +340,7 @@ func runSetOperations(t *testing.T, conn Conn, s Suite) {
 	newsletter := s.From("newsletter").Select("user_id")
 	tests := []struct {
 		name    string
-		query   builder.SelectBuilder
+		query   builder.CompoundBuilder
 		needAll bool
 		want    []int
 	}{

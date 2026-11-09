@@ -31,11 +31,12 @@ func TestUpdateBuilder_Clauses(t *testing.T) {
 			want: `UPDATE "users" SET "name" = $1 WHERE "id" = $2 RETURNING "id", "name";`,
 		},
 		{
-			name: "where and returning are replaced by later calls",
+			// Each Where narrows the update further; Returning is replaced.
+			name: "where accumulates with and while returning is replaced",
 			b: users.Set("name", syntax.P(1)).
-				Where(syntax.Eq("old", 1)).Where(syntax.Eq("id", syntax.P(2))).
-				Returning("old").Returning("id"),
-			want: `UPDATE "users" SET "name" = $1 WHERE "id" = $2 RETURNING "id";`,
+				Where(syntax.Eq("tenant_id", syntax.P(2))).Where(nil).Where(syntax.Eq("id", syntax.P(3))).
+				Returning("old").Returning("*"),
+			want: `UPDATE "users" SET "name" = $1 WHERE "tenant_id" = $2 AND "id" = $3 RETURNING *;`,
 		},
 	})
 }

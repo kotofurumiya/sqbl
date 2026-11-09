@@ -208,7 +208,7 @@ func (b CreateTableBuilder) ForeignKey(cols []string, refTable string, refCols [
 }
 
 // Check adds a table-level CHECK constraint.
-// expr is a dialect-aware Expression, rendered the same way as a WHERE condition.
+// expr is any condition fragment, rendered the same way as a WHERE condition.
 //
 //	.Check(syntax.Gt("price", 0))
 //	  →  CHECK ("price" > 0)

@@ -1,6 +1,7 @@
 package builder_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/builder"
@@ -57,6 +58,26 @@ func runSQLCases(t *testing.T, tests []sqlCase) {
 	}
 }
 
+// errCase is a statement whose rendering must fail with an error containing want.
+type errCase struct {
+	name string
+	b    builder.Statement
+	want string
+}
+
+func runErrCases(t *testing.T, tests []errCase) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sql, err := tt.b.ToSQL()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("want an error containing %q, got %v (SQL %q)", tt.want, err, sql)
+			}
+		})
+	}
+}
+
 // TestBuilder_RenderContract checks the two render methods every builder shares:
 // ToSQL uses the builder's own dialect and ends with a semicolon, while
 // ToSQLWithDialect uses the given dialect and has no semicolon.
@@ -71,6 +92,7 @@ func TestBuilder_RenderContract(t *testing.T) {
 		wantMySQL string
 	}{
 		{"select", newSelect().From("users").Select("id"), `SELECT "id" FROM "users";`, "SELECT `id` FROM `users`"},
+		{"compound", newSelect().From("a").Union(newSelect().From("b")), `SELECT * FROM "a" UNION SELECT * FROM "b";`, "SELECT * FROM `a` UNION SELECT * FROM `b`"},
 		{"insert", newInsert().Into("users").Columns("id").Values(1), `INSERT INTO "users" ("id") VALUES (1);`, "INSERT INTO `users` (`id`) VALUES (1)"},
 		{"update", newUpdate().Table("users").Set("id", 1), `UPDATE "users" SET "id" = 1;`, "UPDATE `users` SET `id` = 1"},
 		{"delete", newDelete().From("users"), `DELETE FROM "users";`, "DELETE FROM `users`"},
@@ -102,6 +124,8 @@ func TestBuilder_FailsWithoutDialect(t *testing.T) {
 		b    builder.Statement
 	}{
 		{"select", builder.SelectBuilder{}},
+		{"compound", builder.SelectBuilder{}.Union(builder.SelectBuilder{})},
+		{"zero compound", builder.CompoundBuilder{}},
 		{"insert", builder.InsertBuilder{}},
 		{"update", builder.UpdateBuilder{}},
 		{"delete", builder.DeleteBuilder{}},
@@ -144,15 +168,17 @@ func assertPanics(t *testing.T, f func()) {
 func TestBuilder_CopiesCallerSlices(t *testing.T) {
 	t.Parallel()
 	cols := []string{"a", "b"}
+	items := []any{"a", "b"}
 	vals := []any{1, 2}
 
 	tests := []sqlCase{
-		{"select distinct on", newSelect().From("t").DistinctOn(cols...), `SELECT DISTINCT ON ("a", "b") * FROM "t";`},
+		{"select distinct on", newSelect().From("t").DistinctOn(items...), `SELECT DISTINCT ON ("a", "b") * FROM "t";`},
 		{"insert columns and values", newInsert().Into("t").Columns(cols...).Values(vals...), `INSERT INTO "t" ("a", "b") VALUES (1, 2);`},
 		{"insert on conflict", newInsert().Into("t").Values(1).OnConflict(cols...).DoUpdate(`"a" = 1`), `INSERT INTO "t" VALUES (1) ON CONFLICT ("a", "b") DO UPDATE SET "a" = 1;`},
-		{"insert returning", newInsert().Into("t").Values(1).Returning(cols...), `INSERT INTO "t" VALUES (1) RETURNING "a", "b";`},
-		{"update returning", newUpdate().Table("t").Set("a", 1).Returning(cols...), `UPDATE "t" SET "a" = 1 RETURNING "a", "b";`},
-		{"delete returning", newDelete().From("t").Returning(cols...), `DELETE FROM "t" RETURNING "a", "b";`},
+		{"insert returning", newInsert().Into("t").Values(1).Returning(items...), `INSERT INTO "t" VALUES (1) RETURNING "a", "b";`},
+		{"update returning", newUpdate().Table("t").Set("a", 1).Returning(items...), `UPDATE "t" SET "a" = 1 RETURNING "a", "b";`},
+		{"delete returning", newDelete().From("t").Returning(items...), `DELETE FROM "t" RETURNING "a", "b";`},
+		{"create index columns", newCreateIndex().Name("i").On("t").Columns(items...), `CREATE INDEX "i" ON "t" ("a", "b");`},
 		{"create table column constraints", newCreateTable().Table("t").Column("a", "INT", cols...), `CREATE TABLE "t" ("a" INT a b);`},
 		{
 			name: "create table constraints",
@@ -161,6 +187,7 @@ func TestBuilder_CopiesCallerSlices(t *testing.T) {
 		},
 	}
 	cols[0], cols[1] = "x", "y"
+	items[0], items[1] = "x", "y"
 	vals[0], vals[1] = 8, 9
 	runSQLCases(t, tests)
 }

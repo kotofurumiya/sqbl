@@ -27,16 +27,16 @@ func (s setClause) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 // Use a dialect-specific constructor (e.g. sqblpg.Update) to create an instance.
 //
 //	q := sqblpg.Update("users").
-//	    Set("name", sqbl.P(1)).
-//	    Set("email", sqbl.P(2)).
-//	    Where(sqblpg.Eq("id", sqbl.P(3)))
-//	sql := q.ToSQL()
+//	    Set("name", sqblpg.P(1)).
+//	    Set("email", sqblpg.P(2)).
+//	    Where(sqblpg.Eq("id", sqblpg.P(3)))
+//	sql, err := q.ToSQL()
 type UpdateBuilder struct {
 	dialect   dialect.Dialect
 	table     string
 	sets      []setClause
-	where     syntax.SQLFragment
-	returning []string
+	where     []syntax.SQLFragment // ANDed
+	returning []any
 }
 
 var _ Statement = UpdateBuilder{}
@@ -76,21 +76,11 @@ func (b UpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 		}
 	}
 
-	// WHERE condition
-	if b.where != nil {
-		buf.WriteString(" WHERE ")
-		b.where.AppendSQL(buf, d)
-	}
+	writeConditions(buf, d, " WHERE ", b.where)
 
-	// RETURNING col1, col2, ...
 	if len(b.returning) > 0 {
 		buf.WriteString(" RETURNING ")
-		for i, col := range b.returning {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			d.QuoteIdentifier(buf, col)
-		}
+		writeValues(buf, d, b.returning)
 	}
 }
 
@@ -113,27 +103,30 @@ func (b UpdateBuilder) Table(table string) UpdateBuilder {
 // The value accepts the same values as syntax.AppendValue, so a plain string
 // is an identifier; use syntax.Raw for an expression.
 //
-//	b.Set("name", sqbl.P(1)).Set("email", sqbl.P(2))
-//	b.Set("count", sqbl.Raw(`"count" + 1`))
+//	b.Set("name", sqblpg.P(1)).Set("email", sqblpg.P(2))
+//	b.Set("count", sqblpg.Raw(`"count" + 1`))
 //	b.Set("deleted_at", nil) // "deleted_at" = NULL
 func (b UpdateBuilder) Set(col string, val any) UpdateBuilder {
 	b.sets = append(append([]setClause(nil), b.sets...), setClause{Col: col, Val: val})
 	return b
 }
 
-// Where sets the WHERE condition.
+// Where adds a WHERE condition.
+// Calling Where again ANDs the new condition with the earlier ones; nil is ignored.
+// Without any condition, every row is updated.
 //
-//	b.Where(sqblpg.Eq("id", sqbl.P(1)))
+//	b.Where(sqblpg.Eq("id", sqblpg.P(1)))
 func (b UpdateBuilder) Where(expr syntax.SQLFragment) UpdateBuilder {
-	b.where = expr
+	b.where = addCondition(b.where, expr)
 	return b
 }
 
-// Returning adds a RETURNING clause to the UPDATE statement.
-// The specified columns are returned for each updated row.
+// Returning sets the RETURNING list, replacing any earlier list.
+// Each item follows the rules of syntax.AppendValue, so "*" returns every column.
+// Supported by PostgreSQL, SQLite 3.35+, and MariaDB 10.5+.
 //
-//	sqblpg.Update("users").Set("name", sqbl.P(1)).Where(...).Returning("id", "name")
-func (b UpdateBuilder) Returning(cols ...string) UpdateBuilder {
+//	sqblpg.Update("users").Set("name", sqblpg.P(1)).Where(sqblpg.Eq("id", sqblpg.P(2))).Returning("id", "name")
+func (b UpdateBuilder) Returning(cols ...any) UpdateBuilder {
 	b.returning = slices.Clone(cols)
 	return b
 }
