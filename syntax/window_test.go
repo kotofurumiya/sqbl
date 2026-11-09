@@ -1,122 +1,39 @@
 package syntax
 
 import (
-	"bytes"
 	"testing"
 
-	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqltesting"
 )
 
 func TestWindowExpr(t *testing.T) {
 	t.Parallel()
-	d := &dialect.SimpleDialect{}
 
+	const frame = "BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
 	tests := []struct {
 		name string
-		w    WindowExpr
+		w    SqlFragment
 		want string
 	}{
+		{"empty window", Over(Fn("ROW_NUMBER")), "ROW_NUMBER() OVER ()"},
+		{"PARTITION BY only", Over(Fn("ROW_NUMBER")).PartitionBy("u.dept", "region"), `ROW_NUMBER() OVER (PARTITION BY "u"."dept", "region")`},
+		{"ORDER BY only", Over(Fn("RANK")).OrderBy("salary", Desc("u.hired_at")), `RANK() OVER (ORDER BY "salary", "u"."hired_at" DESC)`},
+		{"frame only", Over(Fn("SUM", "amount")).Rows(frame), `SUM("amount") OVER (ROWS ` + frame + `)`},
+		{"PARTITION BY and frame", Over(Fn("SUM", "amount")).PartitionBy("dept").Range(frame), `SUM("amount") OVER (PARTITION BY "dept" RANGE ` + frame + `)`},
 		{
-			name: "empty window",
-			w:    Over(Fn("ROW_NUMBER")),
-			want: "ROW_NUMBER() OVER ()",
+			"full spec",
+			Over(Fn("SUM", "amount")).PartitionBy("dept").OrderBy("id").Rows(frame),
+			`SUM("amount") OVER (PARTITION BY "dept" ORDER BY "id" ROWS ` + frame + `)`,
 		},
-		{
-			name: "PARTITION BY",
-			w:    Over(Fn("ROW_NUMBER")).PartitionBy("dept"),
-			want: `ROW_NUMBER() OVER (PARTITION BY "dept")`,
-		},
-		{
-			name: "ORDER BY string",
-			w:    Over(Fn("RANK")).OrderBy("salary"),
-			want: `RANK() OVER (ORDER BY "salary")`,
-		},
-		{
-			name: "ORDER BY Desc",
-			w:    Over(Fn("RANK")).OrderBy(Desc("salary")),
-			want: `RANK() OVER (ORDER BY "salary" DESC)`,
-		},
-		{
-			name: "PARTITION BY and ORDER BY",
-			w:    Over(Fn("ROW_NUMBER")).PartitionBy("dept").OrderBy("salary"),
-			want: `ROW_NUMBER() OVER (PARTITION BY "dept" ORDER BY "salary")`,
-		},
-		{
-			name: "multiple PARTITION BY cols",
-			w:    Over(Fn("RANK")).PartitionBy("dept", "region").OrderBy("salary"),
-			want: `RANK() OVER (PARTITION BY "dept", "region" ORDER BY "salary")`,
-		},
-		{
-			name: "ROWS frame",
-			w:    Over(Fn("SUM", "amount")).OrderBy("id").Rows("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"),
-			want: `SUM("amount") OVER (ORDER BY "id" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`,
-		},
-		{
-			name: "RANGE frame",
-			w:    Over(Fn("SUM", "amount")).OrderBy("id").Range("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"),
-			want: `SUM("amount") OVER (ORDER BY "id" RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`,
-		},
-		{
-			name: "full window spec",
-			w:    Over(Fn("SUM", "amount")).PartitionBy("dept").OrderBy("salary").Rows("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"),
-			want: `SUM("amount") OVER (PARTITION BY "dept" ORDER BY "salary" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`,
-		},
+		// Setters replace rather than accumulate, so the last call wins.
+		{"later setters replace earlier ones", Over(Fn("RANK")).OrderBy("a").OrderBy("b").Rows(frame).Range(frame), `RANK() OVER (ORDER BY "b" RANGE ` + frame + `)`},
+		{"aliased", As(Over(Fn("ROW_NUMBER")).OrderBy("id"), "rn"), `ROW_NUMBER() OVER (ORDER BY "id") AS "rn"`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			var buf bytes.Buffer
-			tt.w.AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.want {
-				t.Errorf("WindowExpr.AppendSQL() = %q; want %q", got, tt.want)
-			}
+			sqltesting.AssertSQL(t, render(tt.w), tt.want)
 		})
-	}
-}
-
-func TestWindowExpr_WithPostgresDialect(t *testing.T) {
-	t.Parallel()
-	d := &dialect.PostgresDialect{}
-
-	tests := []struct {
-		name string
-		w    WindowExpr
-		want string
-	}{
-		{
-			name: "qualified column in PARTITION BY",
-			w:    Over(Fn("ROW_NUMBER")).PartitionBy("u.dept").OrderBy("u.salary"),
-			want: `ROW_NUMBER() OVER (PARTITION BY "u"."dept" ORDER BY "u"."salary")`,
-		},
-		{
-			name: "SUM with qualified col and PARTITION BY",
-			w:    Over(Fn("SUM", "p.amount")).PartitionBy("p.user_id").OrderBy("p.created_at"),
-			want: `SUM("p"."amount") OVER (PARTITION BY "p"."user_id" ORDER BY "p"."created_at")`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var buf bytes.Buffer
-			tt.w.AppendSQL(&buf, d)
-			if got := buf.String(); got != tt.want {
-				t.Errorf("WindowExpr.AppendSQL(pg) = %q; want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestWindowExpr_AsFragment(t *testing.T) {
-	t.Parallel()
-	d := &dialect.SimpleDialect{}
-
-	// WindowExpr implements SqlFragment and can be used with As()
-	var buf bytes.Buffer
-	As(Over(Fn("ROW_NUMBER")).PartitionBy("dept").OrderBy("salary"), "rn").AppendSQL(&buf, d)
-	want := `ROW_NUMBER() OVER (PARTITION BY "dept" ORDER BY "salary") AS "rn"`
-	if got := buf.String(); got != want {
-		t.Errorf("As(Over(...), alias).AppendSQL() = %q; want %q", got, want)
 	}
 }

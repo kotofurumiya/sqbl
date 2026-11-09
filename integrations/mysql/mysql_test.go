@@ -97,11 +97,9 @@ func openDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// adapt wraps a *sql.DB as a shared.Conn.
-func adapt(db *sql.DB) shared.Conn { return &mysqlConn{db} }
+func openConn(t *testing.T) shared.Conn { return &mysqlConn{openDB(t)} }
 
-// defaultSuite wires the MySQL builder constructors into a shared.Suite.
-var defaultSuite = shared.Suite{
+var suite = shared.Suite{
 	From:        sqblmysql.From,
 	InsertInto:  sqblmysql.InsertInto,
 	Update:      sqblmysql.Update,
@@ -113,261 +111,49 @@ var defaultSuite = shared.Suite{
 	AlterTable:  sqblmysql.AlterTable,
 
 	DropIndexOnTable: true,
+	PositionalParams: true,
+	SetOpAll:         true,
 }
 
-func TestMySQL_CRUD(t *testing.T) {
+func TestShared(t *testing.T) {
 	t.Parallel()
-	db := openDB(t)
-	shared.RunCRUD(t, adapt(db), defaultSuite)
+	shared.RunAll(t, openConn, suite)
 }
 
-func TestMySQL_Injection_ValueAsParameter(t *testing.T) {
+// TestOnDuplicateKeyUpdate upserts a tag counter twice, once with raw
+// assignments and once with structured ones, and checks the merged row.
+func TestOnDuplicateKeyUpdate(t *testing.T) {
 	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_ValueAsParameter(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_StoredValue(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_StoredValue(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_LikeWildcardsInEqValue(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_LikeWildcardsInEqValue(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_QuotedIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_QuotedIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_OrderByIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_OrderByIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_TableNameIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_TableNameIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_SelectColumnIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_SelectColumnIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_AliasIdentifier(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_AliasIdentifier(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_CommentBasedPayloads(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_CommentBasedPayloads(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Injection_StackedInsertPayload(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunInjection_StackedInsertPayload(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_JoinWithAliases(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunJoinWithAliases(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Subquery(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunSubquery(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_SetOperations(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunSetOperations(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_CTEAndAggregation(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCTEAndAggregation(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Identifiers_ReservedKeywords(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunIdentifiers_ReservedKeywords(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Identifiers_MixedCase(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunIdentifiers_MixedCase(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_Identifiers_EmbeddedDoubleQuote(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunIdentifiers_EmbeddedDoubleQuote(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_CreateTable(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_CreateTable_UniqueConstraint(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable_UniqueConstraint(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_CreateTable_ForeignKey(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable_ForeignKey(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_CreateTable_Check(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateTable_Check(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_CreateIndex(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunCreateIndex(t, adapt(db), defaultSuite)
-}
-
-// TestMySQL_CreateIndex_Partial is intentionally absent: MySQL/MariaDB do not
-// support partial indexes (WHERE clause in CREATE INDEX).
-
-// TestMySQL_Upsert_DoUpdateWhere and TestMySQL_Upsert_OnConflictWhere are
-// intentionally absent: MySQL/MariaDB use ON DUPLICATE KEY UPDATE instead of
-// ON CONFLICT, and have no conditional or partial-index form of it.
-
-func TestMySQL_FilteringAndPagination(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunFilteringAndPagination(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_RecursiveCTE(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunRecursiveCTE(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_SchemaEvolution(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	shared.RunSchemaEvolution(t, adapt(db), defaultSuite)
-}
-
-func TestMySQL_OnDuplicateKeyUpdate(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	ctx := context.Background()
-	a := adapt(db)
-
-	if err := a.Exec(ctx, `
-		CREATE TEMPORARY TABLE tag_counts (
-			tag   TEXT        NOT NULL,
-			count INTEGER     NOT NULL DEFAULT 0,
-			UNIQUE KEY (tag(255))
+	conn := openConn(t)
+	shared.MustExec(t, conn, `
+		CREATE TEMPORARY TABLE tags (
+			tag   VARCHAR(32) PRIMARY KEY,
+			label VARCHAR(32) NOT NULL,
+			hits  INTEGER     NOT NULL
 		)
-	`); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	// First INSERT: new tag with count 1.
-	insertSQL := defaultSuite.InsertInto("tag_counts").
-		Columns("tag", "count").
-		Values(sqblmysql.P(1), sqblmysql.P(2)).
-		OnDuplicateKeyUpdate("count = count + 1").
-		ToSql()
-
-	if err := a.Exec(ctx, insertSQL, "go", 1); err != nil {
-		t.Fatalf("first insert: %v", err)
-	}
-
-	// Second INSERT with same tag: ON DUPLICATE KEY UPDATE increments count.
-	if err := a.Exec(ctx, insertSQL, "go", 1); err != nil {
-		t.Fatalf("second insert (duplicate): %v", err)
-	}
-
-	var count int
-	if err := a.QueryRow(ctx,
-		defaultSuite.From("tag_counts").
-			Select("count").
-			Where(sqblmysql.Eq("tag", sqblmysql.P(1))).
-			ToSql(),
-		"go",
-	).Scan(&count); err != nil {
-		t.Fatalf("select count: %v", err)
-	}
-	if count != 2 {
-		t.Errorf("count = %d; want 2", count)
-	}
-}
-
-func TestMySQL_OnDuplicateKeyUpdateSet(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	ctx := context.Background()
-	a := adapt(db)
-
-	if err := a.Exec(ctx, `
-		CREATE TEMPORARY TABLE tag_labels (
-			tag   VARCHAR(255) NOT NULL PRIMARY KEY,
-			label TEXT         NOT NULL,
-			hits  INTEGER      NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	upsertSQL := defaultSuite.InsertInto("tag_labels").
+	`)
+	insert := sqblmysql.InsertInto("tags").
 		Columns("tag", "label", "hits").
-		Values(sqblmysql.P(), sqblmysql.P(), sqblmysql.P()).
+		Values(sqblmysql.P(), sqblmysql.P(), sqblmysql.P())
+	row := sqblmysql.From("tags").Select("label", "hits").ToSql()
+	assertRow := func(wantLabel string, wantHits int) {
+		t.Helper()
+		var label string
+		var hits int
+		shared.MustScan(t, conn, row, nil, &label, &hits)
+		if label != wantLabel || hits != wantHits {
+			t.Errorf("got (%q, %d); want (%q, %d)", label, hits, wantLabel, wantHits)
+		}
+	}
+
+	shared.MustExec(t, conn, insert.OnDuplicateKeyUpdate("hits = hits + 1").ToSql(), "go", "Go", 1)
+	shared.MustExec(t, conn, insert.OnDuplicateKeyUpdate("hits = hits + 1").ToSql(), "go", "Ignored", 1)
+	assertRow("Go", 2)
+
+	structured := insert.
 		OnDuplicateKeyUpdateSet("label", sqblmysql.Fn("VALUES", "label")).
-		OnDuplicateKeyUpdateSet("hits", sqblmysql.Raw("`hits` + 1")).
+		OnDuplicateKeyUpdateSet("hits", sqblmysql.Raw("`hits` + 10")).
 		ToSql()
-
-	if err := a.Exec(ctx, upsertSQL, "go", "Go", 1); err != nil {
-		t.Fatalf("first insert: %v", err)
-	}
-	// The duplicate key takes the new label and increments hits.
-	if err := a.Exec(ctx, upsertSQL, "go", "Golang", 1); err != nil {
-		t.Fatalf("second insert (duplicate): %v", err)
-	}
-
-	var label string
-	var hits int
-	if err := a.QueryRow(ctx,
-		defaultSuite.From("tag_labels").
-			Select("label", "hits").
-			Where(sqblmysql.Eq("tag", sqblmysql.P())).
-			ToSql(),
-		"go",
-	).Scan(&label, &hits); err != nil {
-		t.Fatalf("select: %v", err)
-	}
-	if label != "Golang" || hits != 2 {
-		t.Errorf("got (%q, %d); want (%q, %d)", label, hits, "Golang", 2)
-	}
+	shared.MustExec(t, conn, structured, "go", "Golang", 1)
+	assertRow("Golang", 12)
 }

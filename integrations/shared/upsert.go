@@ -1,130 +1,152 @@
 package shared
 
 import (
-	"context"
 	"errors"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// RunUpsert_DoUpdateWhere verifies that ON CONFLICT ... DO UPDATE ... WHERE
-// overwrites an existing row only when the condition holds.
-// The scenario accepts a write only when it carries a newer version.
-// Requires ON CONFLICT support (PostgreSQL, SQLite 3.24+).
-func RunUpsert_DoUpdateWhere(t testing.TB, conn Conn, s Suite) {
-	t.Helper()
-	ctx := context.Background()
+// runReturning reads affected rows back through RETURNING on INSERT, UPDATE
+// and DELETE.
+func runReturning(t *testing.T, conn Conn, s Suite) {
+	if !s.Returning {
+		t.Skip("RETURNING is not supported on every statement")
+	}
+	MustExec(t, conn, `CREATE TEMPORARY TABLE articles (id INTEGER PRIMARY KEY, title VARCHAR(64) NOT NULL)`)
 
-	dropIfExists(conn, ctx, "it_upsert_versioned_users")
-	t.Cleanup(func() { dropIfExists(conn, ctx, "it_upsert_versioned_users") })
-
-	mustExec(t, conn, ctx, "create table", `
-		CREATE TABLE it_upsert_versioned_users (
-			id      BIGINT  PRIMARY KEY,
-			name    TEXT    NOT NULL,
-			version INTEGER NOT NULL
-		)
-	`)
-
-	upsertSQL := s.InsertInto("it_upsert_versioned_users").
-		Columns("id", "name", "version").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
-		OnConflict("id").
-		DoUpdateSet("name", "excluded.name").
-		DoUpdateSet("version", "excluded.version").
-		DoUpdateWhere(syntax.Lt("it_upsert_versioned_users.version", "excluded.version")).
-		Returning("version").
-		ToSql()
-
-	var version int
-	if err := conn.QueryRow(ctx, upsertSQL, 1, "Alice", 2).Scan(&version); err != nil {
-		t.Fatalf("initial insert: %v", err)
+	var id int
+	var title string
+	MustScan(t, conn,
+		s.InsertInto("articles").Columns("id", "title").Values(syntax.P(1), syntax.P(2)).Returning("id", "title").ToSql(),
+		[]any{1, "Hello"}, &id, &title)
+	if id != 1 || title != "Hello" {
+		t.Errorf("INSERT RETURNING = (%d, %q); want (1, %q)", id, title, "Hello")
 	}
 
-	// An older version does not satisfy the condition, so no row is updated or returned.
-	err := conn.QueryRow(ctx, upsertSQL, 1, "Old Alice", 1).Scan(&version)
-	if !errors.Is(err, ErrNoRows) {
-		t.Errorf("older upsert: expected ErrNoRows, got %v", err)
+	MustScan(t, conn,
+		s.Update("articles").Set("title", syntax.P(1)).Where(syntax.Eq("id", syntax.P(2))).Returning("title").ToSql(),
+		[]any{"Updated", 1}, &title)
+	if title != "Updated" {
+		t.Errorf("UPDATE RETURNING = %q; want %q", title, "Updated")
 	}
 
-	if err := conn.QueryRow(ctx, upsertSQL, 1, "New Alice", 3).Scan(&version); err != nil {
-		t.Fatalf("newer upsert: %v", err)
+	MustScan(t, conn,
+		s.DeleteFrom("articles").Where(syntax.Eq("id", syntax.P(1))).Returning("id").ToSql(),
+		[]any{1}, &id)
+	if id != 1 {
+		t.Errorf("DELETE RETURNING = %d; want 1", id)
 	}
-	if version != 3 {
-		t.Errorf("newer upsert: version = %d; want 3", version)
-	}
-
-	var name string
-	if err := conn.QueryRow(ctx,
-		s.From("it_upsert_versioned_users").Select("name").Where(syntax.Eq("id", syntax.P(1))).ToSql(),
-		1,
-	).Scan(&name); err != nil {
-		t.Fatalf("select: %v", err)
-	}
-	if name != "New Alice" {
-		t.Errorf("name = %q; want %q", name, "New Alice")
-	}
+	AssertCount(t, conn, "articles", 0)
 }
 
-// RunUpsert_OnConflictWhere verifies that ON CONFLICT (cols) WHERE pred can
-// target a partial unique index.
-// The scenario keeps email unique among active users only.
-// Requires partial index and ON CONFLICT support (PostgreSQL, SQLite 3.24+).
-func RunUpsert_OnConflictWhere(t testing.TB, conn Conn, s Suite) {
-	t.Helper()
-	ctx := context.Background()
-
-	dropIfExists(conn, ctx, "it_upsert_active_users")
-	t.Cleanup(func() { dropIfExists(conn, ctx, "it_upsert_active_users") })
-
-	mustExec(t, conn, ctx, "create table", `
-		CREATE TABLE it_upsert_active_users (
-			id     BIGINT  PRIMARY KEY,
-			email  TEXT    NOT NULL,
-			name   TEXT    NOT NULL,
-			active INTEGER NOT NULL
-		)
-	`)
-	mustExec(t, conn, ctx, "create partial unique index", `
-		CREATE UNIQUE INDEX it_upsert_active_users_email
-		ON it_upsert_active_users (email) WHERE active = 1
-	`)
-
-	upsertSQL := s.InsertInto("it_upsert_active_users").
-		Columns("id", "email", "name", "active").
-		Values(syntax.P(1), syntax.P(2), syntax.P(3), syntax.P(4)).
-		OnConflict("email").
-		OnConflictWhere(syntax.Eq("active", 1)).
-		DoUpdate(`"name" = excluded."name"`).
-		ToSql()
-
-	mustExec(t, conn, ctx, "insert active user", upsertSQL, 1, "alice@example.com", "Alice", 1)
-	// Conflicts with the active user, so the name is updated instead of inserting a row.
-	mustExec(t, conn, ctx, "upsert active user", upsertSQL, 2, "alice@example.com", "Alice Smith", 1)
-
-	mustExec(t, conn, ctx, "deactivate user",
-		s.Update("it_upsert_active_users").Set("active", 0).Where(syntax.Eq("id", syntax.P(1))).ToSql(),
-		1,
-	)
-	// The inactive user is outside the partial index, so the same email is inserted as a new row.
-	mustExec(t, conn, ctx, "insert new active user", upsertSQL, 3, "alice@example.com", "Alice Jones", 1)
+// runOnConflict covers each ON CONFLICT form: ignoring the row, overwriting it
+// with raw or structured assignments, overwriting only when a condition holds,
+// and targeting a partial unique index.
+func runOnConflict(t *testing.T, conn Conn, s Suite) {
+	if !s.OnConflict {
+		t.Skip("ON CONFLICT is not supported")
+	}
 
 	type user struct {
-		id     int
-		name   string
-		active int
+		id      int
+		name    string
+		version int
 	}
-	rows := mustQuery(t, conn, ctx, "select users",
-		s.From("it_upsert_active_users").Select("id", "name", "active").OrderBy("id").ToSql(),
-	)
-	got := collectRows(t, rows, func(r Rows) (user, error) {
+	scanUser := func(r Rows) (user, error) {
 		var u user
-		err := r.Scan(&u.id, &u.name, &u.active)
-		return u, err
+		return u, r.Scan(&u.id, &u.name, &u.version)
+	}
+	// newTable creates a users table holding only {1, Alice, 1} and returns a
+	// query listing its rows.
+	newTable := func(t *testing.T, table string) string {
+		t.Helper()
+		UseTables(t, conn, table)
+		MustExec(t, conn, s.CreateTable(table).
+			Column("id", "INTEGER", "PRIMARY KEY").
+			Column("name", "VARCHAR(32)", "NOT NULL").
+			Column("version", "INTEGER", "NOT NULL").
+			ToSql())
+		MustExec(t, conn, s.InsertInto(table).Columns("id", "name", "version").Values(1, syntax.Raw("'Alice'"), 1).ToSql())
+		return s.From(table).Select("id", "name", "version").OrderBy(syntax.Asc("id")).ToSql()
+	}
+
+	t.Run("DoNothing", func(t *testing.T) {
+		const table = "it_oc_nothing"
+		selectAll := newTable(t, table)
+		sql := s.InsertInto(table).
+			Columns("id", "name", "version").
+			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+			OnConflictDoNothing().
+			Returning("id").
+			ToSql()
+		var id int
+		if err := conn.QueryRow(t.Context(), sql, 1, "Bob", 2).Scan(&id); !errors.Is(err, ErrNoRows) {
+			t.Errorf("ignored insert returned %v; want ErrNoRows", err)
+		}
+		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Alice", 1}})
 	})
-	assertSlice(t, got, []user{
-		{1, "Alice Smith", 0},
-		{3, "Alice Jones", 1},
+
+	t.Run("DoUpdate", func(t *testing.T) {
+		const table = "it_oc_update"
+		selectAll := newTable(t, table)
+		raw := s.InsertInto(table).
+			Columns("id", "name", "version").
+			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+			OnConflict("id").
+			DoUpdate("name = excluded.name").
+			ToSql()
+		MustExec(t, conn, raw, 1, "Bob", 9)
+		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Bob", 1}})
+
+		structured := s.InsertInto(table).
+			Columns("id", "name", "version").
+			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+			OnConflict("id").
+			DoUpdateSet("name", "excluded.name").
+			DoUpdateSet("version", syntax.Raw(table+".version + 1")).
+			ToSql()
+		MustExec(t, conn, structured, 1, "Carol", 9)
+		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Carol", 2}})
+	})
+
+	t.Run("DoUpdateWhere", func(t *testing.T) {
+		const table = "it_oc_versioned"
+		selectAll := newTable(t, table)
+		// Accept a write only when it carries a newer version.
+		sql := s.InsertInto(table).
+			Columns("id", "name", "version").
+			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+			OnConflict("id").
+			DoUpdateSet("name", "excluded.name").
+			DoUpdateSet("version", "excluded.version").
+			DoUpdateWhere(syntax.Lt(table+".version", "excluded.version")).
+			ToSql()
+		MustExec(t, conn, sql, 1, "Stale", 0)
+		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Alice", 1}})
+		MustExec(t, conn, sql, 1, "Fresh", 2)
+		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{1, "Fresh", 2}})
+	})
+
+	t.Run("OnConflictWhere", func(t *testing.T) {
+		if !s.PartialIndex {
+			t.Skip("partial indexes are not supported")
+		}
+		const table = "it_oc_partial"
+		selectAll := newTable(t, table)
+		// name is unique only among rows with version 1.
+		MustExec(t, conn, s.CreateIndex(table+"_name").On(table).Columns("name").Unique().Where(syntax.Eq("version", 1)).ToSql())
+		sql := s.InsertInto(table).
+			Columns("id", "name", "version").
+			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+			OnConflict("name").
+			OnConflictWhere(syntax.Eq("version", 1)).
+			DoUpdateSet("id", "excluded.id").
+			ToSql()
+		// Conflicts with Alice inside the index, so her row takes the new id.
+		MustExec(t, conn, sql, 2, "Alice", 1)
+		// Version 2 rows fall outside the index, so this is a plain insert.
+		MustExec(t, conn, sql, 3, "Alice", 2)
+		AssertSlice(t, QueryRows(t, conn, scanUser, selectAll), []user{{2, "Alice", 1}, {3, "Alice", 2}})
 	})
 }

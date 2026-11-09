@@ -1,58 +1,16 @@
 package builder_test
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/kotofurumiya/sqbl/builder"
-	"github.com/kotofurumiya/sqbl/dialect"
-)
-
-func newDropTableBuilder(d dialect.SqlDialect) builder.SqlDropTableBuilder {
-	return (builder.SqlDropTableBuilder{}).Dialect(d).Table("users")
-}
-
-func TestSqlDropTableBuilder_Basic(t *testing.T) {
+func TestSqlDropTableBuilder_Clauses(t *testing.T) {
 	t.Parallel()
-	got := newDropTableBuilder(&dialect.SimpleDialect{}).ToSql()
-	want := `DROP TABLE "users";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
+	users := newDropTable().Table("users")
 
-func TestSqlDropTableBuilder_IfExists(t *testing.T) {
-	t.Parallel()
-	got := newDropTableBuilder(&dialect.SimpleDialect{}).IfExists().ToSql()
-	want := `DROP TABLE IF EXISTS "users";`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlDropTableBuilder_Cascade_PostgreSQL(t *testing.T) {
-	t.Parallel()
-	got := newDropTableBuilder(&dialect.PostgresDialect{}).Cascade().ToSql()
-	want := `DROP TABLE "users" CASCADE;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlDropTableBuilder_Cascade_AnyDialect(t *testing.T) {
-	t.Parallel()
-	// sqbl does not validate dialect support: CASCADE is rendered whenever requested.
-	got := newDropTableBuilder(&dialect.MysqlDialect{}).Cascade().ToSql()
-	want := "DROP TABLE `users` CASCADE;"
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
-}
-
-func TestSqlDropTableBuilder_IfExistsCascade(t *testing.T) {
-	t.Parallel()
-	got := newDropTableBuilder(&dialect.PostgresDialect{}).IfExists().Cascade().ToSql()
-	want := `DROP TABLE IF EXISTS "users" CASCADE;`
-	if got != want {
-		t.Errorf("got %q; want %q", got, want)
-	}
+	runSQLCases(t, []sqlCase{
+		{"basic", users, `DROP TABLE "users";`},
+		{"qualified table", newDropTable().Table("auth.users"), `DROP TABLE "auth"."users";`},
+		{"if exists", users.IfExists(), `DROP TABLE IF EXISTS "users";`},
+		{"cascade", users.Cascade(), `DROP TABLE "users" CASCADE;`},
+		{"all clauses", users.Cascade().IfExists(), `DROP TABLE IF EXISTS "users" CASCADE;`},
+	})
 }

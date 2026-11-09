@@ -1,241 +1,53 @@
-package sqblsqlite
+package sqblsqlite_test
 
 import (
 	"bytes"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqltesting"
+	"github.com/kotofurumiya/sqbl/sqblsqlite"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// These tests are intentionally minimal.
-// Every function in reexport.go is a one-line wrapper around the corresponding
-// syntax package function. The underlying behaviour is thoroughly tested in
-// syntax/operator_test.go and syntax/parameter_test.go.
-// The sole purpose here is to confirm that each reexport delegates to the
-// correct syntax function, and to provide package-level coverage.
+// Each re-export is a one-line wrapper, so one case per helper is enough to
+// catch a wrapper that delegates to the wrong syntax function.
 func TestReexports(t *testing.T) {
 	t.Parallel()
-
-	d := &dialect.SqliteDialect{}
-
-	t.Run("As", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		As("users", "u").AppendSQL(&got, d)
-		syntax.As("users", "u").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("As: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Cast", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Cast("price", "TEXT").AppendSQL(&got, d)
-		syntax.Cast("price", "TEXT").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Cast: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Eq", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Eq("a", "b").AppendSQL(&got, d)
-		syntax.Eq("a", "b").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Eq: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Ne", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Ne("a", "b").AppendSQL(&got, d)
-		syntax.Ne("a", "b").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Ne: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Lt", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Lt("age", 18).AppendSQL(&got, d)
-		syntax.Lt("age", 18).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Lt: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Lte", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Lte("age", 18).AppendSQL(&got, d)
-		syntax.Lte("age", 18).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Lte: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Gt", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Gt("score", 100).AppendSQL(&got, d)
-		syntax.Gt("score", 100).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Gt: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Gte", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Gte("score", 100).AppendSQL(&got, d)
-		syntax.Gte("score", 100).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Gte: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("And", func(t *testing.T) {
-		t.Parallel()
-		e1, e2 := syntax.Eq("a", "b"), syntax.Eq("c", "d")
-		var got, want bytes.Buffer
-		And(e1, e2).AppendSQL(&got, d)
-		syntax.And(e1, e2).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("And: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Or", func(t *testing.T) {
-		t.Parallel()
-		e1, e2 := syntax.Eq("a", "b"), syntax.Eq("c", "d")
-		var got, want bytes.Buffer
-		Or(e1, e2).AppendSQL(&got, d)
-		syntax.Or(e1, e2).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Or: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Asc", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Asc("name").AppendSQL(&got, d)
-		syntax.Asc("name").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Asc: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Desc", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Desc("created_at").AppendSQL(&got, d)
-		syntax.Desc("created_at").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Desc: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Not", func(t *testing.T) {
-		t.Parallel()
-		e := syntax.Eq("active", false)
-		var got, want bytes.Buffer
-		Not(e).AppendSQL(&got, d)
-		syntax.Not(e).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Not: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("In", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		In("status", "'active'", "'pending'").AppendSQL(&got, d)
-		syntax.In("status", "'active'", "'pending'").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("In: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("NotIn", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		NotIn("status", "'deleted'").AppendSQL(&got, d)
-		syntax.NotIn("status", "'deleted'").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("NotIn: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("IsNull", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		IsNull("deleted_at").AppendSQL(&got, d)
-		syntax.IsNull("deleted_at").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("IsNull: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("IsNotNull", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		IsNotNull("email").AppendSQL(&got, d)
-		syntax.IsNotNull("email").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("IsNotNull: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Between", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Between("age", 18, 65).AppendSQL(&got, d)
-		syntax.Between("age", 18, 65).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Between: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("Like", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-		Like("name", syntax.Raw("'%foo%'")).AppendSQL(&got, d)
-		syntax.Like("name", syntax.Raw("'%foo%'")).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("Like: got %q, want %q", got.String(), want.String())
-		}
-	})
-
-	t.Run("P", func(t *testing.T) {
-		t.Parallel()
-		var got, want bytes.Buffer
-
-		P().AppendSQL(&got, d)
-		syntax.P().AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("P(): got %q, want %q", got.String(), want.String())
-		}
-
-		got.Reset()
-		want.Reset()
-		P(1).AppendSQL(&got, d)
-		syntax.P(1).AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("P(1): got %q, want %q", got.String(), want.String())
-		}
-
-		got.Reset()
-		want.Reset()
-		P(":status").AppendSQL(&got, d)
-		syntax.P(":status").AppendSQL(&want, d)
-		if got.String() != want.String() {
-			t.Errorf("P(named): got %q, want %q", got.String(), want.String())
-		}
-	})
+	tests := []struct {
+		name string
+		f    syntax.SqlFragment
+		want string
+	}{
+		{"As", sqblsqlite.As("users", "u"), `"users" AS "u"`},
+		{"Eq", sqblsqlite.Eq("a", 1), `"a" = 1`},
+		{"Ne", sqblsqlite.Ne("a", 1), `"a" <> 1`},
+		{"Lt", sqblsqlite.Lt("a", 1), `"a" < 1`},
+		{"Lte", sqblsqlite.Lte("a", 1), `"a" <= 1`},
+		{"Gt", sqblsqlite.Gt("a", 1), `"a" > 1`},
+		{"Gte", sqblsqlite.Gte("a", 1), `"a" >= 1`},
+		{"And", sqblsqlite.And(sqblsqlite.Eq("a", 1), sqblsqlite.Eq("b", 2)), `"a" = 1 AND "b" = 2`},
+		{"Or", sqblsqlite.Or(sqblsqlite.Eq("a", 1), sqblsqlite.Eq("b", 2)), `"a" = 1 OR "b" = 2`},
+		{"Asc", sqblsqlite.Asc("a"), `"a" ASC`},
+		{"Desc", sqblsqlite.Desc("a"), `"a" DESC`},
+		{"Not", sqblsqlite.Not(sqblsqlite.Eq("a", 1)), `NOT ("a" = 1)`},
+		{"In", sqblsqlite.In("a", 1, 2), `"a" IN (1, 2)`},
+		{"NotIn", sqblsqlite.NotIn("a", 1, 2), `"a" NOT IN (1, 2)`},
+		{"IsNull", sqblsqlite.IsNull("a"), `"a" IS NULL`},
+		{"IsNotNull", sqblsqlite.IsNotNull("a"), `"a" IS NOT NULL`},
+		{"Between", sqblsqlite.Between("a", 1, 2), `"a" BETWEEN 1 AND 2`},
+		{"Like", sqblsqlite.Like("a", sqblsqlite.P(1)), `"a" LIKE ?1`},
+		{"P", sqblsqlite.P(1), `?1`},
+		{"Fn", sqblsqlite.Fn("SUM", "a"), `SUM("a")`},
+		{"Cast", sqblsqlite.Cast("a", "TEXT"), `CAST("a" AS TEXT)`},
+		{"Over", sqblsqlite.Over(sqblsqlite.Fn("ROW_NUMBER")).OrderBy("a"), `ROW_NUMBER() OVER (ORDER BY "a")`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			tt.f.AppendSQL(&buf, &dialect.SqliteDialect{})
+			sqltesting.AssertSQL(t, buf.String(), tt.want)
+		})
+	}
 }

@@ -11,23 +11,21 @@ import (
 	"github.com/kotofurumiya/sqbl/sqblpg"
 )
 
-// connectDB opens a connection to the test PostgreSQL instance.
-// It reads the DSN from the POSTGRES_DSN environment variable, falling back to
-// the default address used by the compose.yaml in this repository.
+// connectDB opens a dedicated connection to the test PostgreSQL instance.
+// POSTGRES_DSN overrides the default, which matches compose.yaml.
 func connectDB(t *testing.T) *pgx.Conn {
 	t.Helper()
 	dsn := os.Getenv("POSTGRES_DSN")
 	if dsn == "" {
 		dsn = "postgres://sqbl:sqbl@localhost:5432/sqbl_test"
 	}
-	conn, err := pgx.Connect(context.Background(), dsn)
+	conn, err := pgx.Connect(t.Context(), dsn)
 	if err != nil {
 		t.Fatalf("PostgreSQL not available: %v", err)
 	}
-	// Close in t.Cleanup rather than a defer in each test, so that cleanups
-	// registered later by the test (e.g. DROP TABLE) still run on an open
-	// connection; cleanups run in reverse registration order.
-	// t.Context() is not used because it is already canceled when cleanups run.
+	// Closing in a cleanup rather than a defer keeps the connection open for
+	// cleanups registered later by the test, since cleanups run in reverse.
+	// t.Context() is already canceled when cleanups run.
 	t.Cleanup(func() {
 		if err := conn.Close(context.Background()); err != nil {
 			t.Errorf("close conn: %v", err)
@@ -36,41 +34,36 @@ func connectDB(t *testing.T) *pgx.Conn {
 	return conn
 }
 
-// pgxConn adapts *pgx.Conn to the shared.Conn interface.
+// pgxConn adapts *pgx.Conn to shared.Conn.
 type pgxConn struct{ conn *pgx.Conn }
 
-// pgxRow wraps pgx.Row so that pgx.ErrNoRows is mapped to shared.ErrNoRows,
-// giving shared tests a single canonical sentinel to check with errors.Is.
+// pgxRow maps pgx.ErrNoRows to shared.ErrNoRows.
 type pgxRow struct{ row pgx.Row }
 
 func (r pgxRow) Scan(dest ...any) error {
-	if err := r.row.Scan(dest...); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return shared.ErrNoRows
-		}
-		return err
+	err := r.row.Scan(dest...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return shared.ErrNoRows
 	}
-	return nil
+	return err
 }
 
-func (a *pgxConn) Exec(ctx context.Context, sql string, args ...any) error {
+func (a pgxConn) Exec(ctx context.Context, sql string, args ...any) error {
 	_, err := a.conn.Exec(ctx, sql, args...)
 	return err
 }
 
-func (a *pgxConn) QueryRow(ctx context.Context, sql string, args ...any) shared.Row {
+func (a pgxConn) QueryRow(ctx context.Context, sql string, args ...any) shared.Row {
 	return pgxRow{a.conn.QueryRow(ctx, sql, args...)}
 }
 
-func (a *pgxConn) Query(ctx context.Context, sql string, args ...any) (shared.Rows, error) {
+func (a pgxConn) Query(ctx context.Context, sql string, args ...any) (shared.Rows, error) {
 	return a.conn.Query(ctx, sql, args...)
 }
 
-// adapt wraps a *pgx.Conn as a shared.Conn.
-func adapt(conn *pgx.Conn) shared.Conn { return &pgxConn{conn} }
+func openConn(t *testing.T) shared.Conn { return pgxConn{connectDB(t)} }
 
-// defaultSuite wires the PostgreSQL builder constructors into a shared.Suite.
-var defaultSuite = shared.Suite{
+var suite = shared.Suite{
 	From:        sqblpg.From,
 	InsertInto:  sqblpg.InsertInto,
 	Update:      sqblpg.Update,
@@ -80,130 +73,16 @@ var defaultSuite = shared.Suite{
 	DropTable:   sqblpg.DropTable,
 	DropIndex:   sqblpg.DropIndex,
 	AlterTable:  sqblpg.AlterTable,
+
+	IndexedParams: true,
+	FullJoin:      true,
+	SetOpAll:      true,
+	Returning:     true,
+	OnConflict:    true,
+	PartialIndex:  true,
 }
 
-func TestPostgres_CRUD(t *testing.T) {
+func TestShared(t *testing.T) {
 	t.Parallel()
-	conn := connectDB(t)
-	shared.RunCRUD(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_ValueAsParameter(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_ValueAsParameter(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_StoredValue(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_StoredValue(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_LikeWildcardsInEqValue(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_LikeWildcardsInEqValue(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_QuotedIdentifier(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_QuotedIdentifier(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_OrderByIdentifier(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_OrderByIdentifier(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_TableNameIdentifier(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_TableNameIdentifier(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_SelectColumnIdentifier(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_SelectColumnIdentifier(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_AliasIdentifier(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_AliasIdentifier(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_CommentBasedPayloads(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_CommentBasedPayloads(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Injection_StackedInsertPayload(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunInjection_StackedInsertPayload(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_JoinWithAliases(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunJoinWithAliases(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Subquery(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunSubquery(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_SetOperations(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunSetOperations(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_CTEAndAggregation(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunCTEAndAggregation(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Identifiers_ReservedKeywords(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunIdentifiers_ReservedKeywords(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Identifiers_MixedCase(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunIdentifiers_MixedCase(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_Identifiers_EmbeddedDoubleQuote(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunIdentifiers_EmbeddedDoubleQuote(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_FilteringAndPagination(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunFilteringAndPagination(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_RecursiveCTE(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunRecursiveCTE(t, adapt(conn), defaultSuite)
-}
-
-func TestPostgres_SchemaEvolution(t *testing.T) {
-	t.Parallel()
-	conn := connectDB(t)
-	shared.RunSchemaEvolution(t, adapt(conn), defaultSuite)
+	shared.RunAll(t, openConn, suite)
 }

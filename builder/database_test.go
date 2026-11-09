@@ -1,53 +1,28 @@
 package builder_test
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/kotofurumiya/sqbl/builder"
-	"github.com/kotofurumiya/sqbl/dialect"
-)
-
-func TestSqlCreateDatabaseBuilder(t *testing.T) {
+func TestSqlCreateDatabaseBuilder_Clauses(t *testing.T) {
 	t.Parallel()
-	base := (builder.SqlCreateDatabaseBuilder{}).Name("app_test")
+	app := newCreateDatabase().Name("app_test")
 
-	tests := []struct {
-		name string
-		got  string
-		want string
-	}{
-		{name: "basic", got: base.Dialect(&dialect.PostgresDialect{}).ToSql(), want: `CREATE DATABASE "app_test";`},
-		{name: "if not exists", got: base.Dialect(&dialect.MysqlDialect{}).IfNotExists().ToSql(), want: "CREATE DATABASE IF NOT EXISTS `app_test`;"},
-		{name: "dot is not a separator", got: base.Name("app.test").ToSqlWithDialect(&dialect.PostgresDialect{}), want: `CREATE DATABASE "app.test"`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.got != tt.want {
-				t.Errorf("got %q; want %q", tt.got, tt.want)
-			}
-		})
-	}
+	runSQLCases(t, []sqlCase{
+		{"basic", app, `CREATE DATABASE "app_test";`},
+		{"if not exists", app.IfNotExists(), `CREATE DATABASE IF NOT EXISTS "app_test";`},
+		// A database name has no schema qualifier, so a dot is part of the name.
+		{"dot is part of the name", newCreateDatabase().Name("app.test"), `CREATE DATABASE "app.test";`},
+	})
 }
 
-func TestSqlDropDatabaseBuilder(t *testing.T) {
+func TestSqlDropDatabaseBuilder_Clauses(t *testing.T) {
 	t.Parallel()
-	base := (builder.SqlDropDatabaseBuilder{}).Dialect(&dialect.PostgresDialect{}).Name("app_test")
+	app := newDropDatabase().Name("app_test")
 
-	tests := []struct {
-		name string
-		got  string
-		want string
-	}{
-		{name: "basic", got: base.ToSql(), want: `DROP DATABASE "app_test";`},
-		{name: "if exists", got: base.IfExists().ToSql(), want: `DROP DATABASE IF EXISTS "app_test";`},
-		{name: "force", got: base.IfExists().Force().ToSql(), want: `DROP DATABASE IF EXISTS "app_test" WITH (FORCE);`},
-		{name: "mysql", got: base.ToSqlWithDialect(&dialect.MysqlDialect{}), want: "DROP DATABASE `app_test`"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.got != tt.want {
-				t.Errorf("got %q; want %q", tt.got, tt.want)
-			}
-		})
-	}
+	runSQLCases(t, []sqlCase{
+		{"basic", app, `DROP DATABASE "app_test";`},
+		{"if exists", app.IfExists(), `DROP DATABASE IF EXISTS "app_test";`},
+		{"force", app.Force(), `DROP DATABASE "app_test" WITH (FORCE);`},
+		{"all clauses", app.Force().IfExists(), `DROP DATABASE IF EXISTS "app_test" WITH (FORCE);`},
+		{"dot is part of the name", newDropDatabase().Name("app.test"), `DROP DATABASE "app.test";`},
+	})
 }
