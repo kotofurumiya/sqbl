@@ -29,7 +29,7 @@ func runFiltering(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(16), syntax.P(17), syntax.P(18), syntax.P(19), syntax.P(20)).
 			Values(syntax.P(21), syntax.P(22), syntax.P(23), syntax.P(24), syntax.P(25)).
 			Values(syntax.P(26), syntax.P(27), syntax.P(28), syntax.P(29), syntax.P(30)).
-			ToSQL(),
+			MustSQL(),
 		1, "Go Programming", "books", 3000, "A programming book",
 		2, "Python Basics", "books", 2500, nil,
 		3, "Mechanical Keyboard", "electronics", 15000, nil,
@@ -67,21 +67,21 @@ func runFiltering(t *testing.T, conn Conn, s Suite) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sql := s.From("products").Select("id").Where(tt.where).OrderBy(syntax.Asc("id")).ToSQL()
+			sql := s.From("products").Select("id").Where(tt.where).OrderBy(syntax.Asc("id")).MustSQL()
 			AssertSlice(t, QueryColumn[int](t, conn, sql, tt.args...), tt.want)
 		})
 	}
 
 	t.Run("Distinct", func(t *testing.T) {
-		sql := s.From("products").Select("category").Distinct().OrderBy(syntax.Asc("category")).ToSQL()
+		sql := s.From("products").Select("category").Distinct().OrderBy(syntax.Asc("category")).MustSQL()
 		AssertSlice(t, QueryColumn[string](t, conn, sql),
 			[]string{"books", "electronics", "kitchen", "stationery"})
 	})
 
 	t.Run("LimitOffset", func(t *testing.T) {
 		page := s.From("products").Select("id").OrderBy(syntax.Desc("price")).Limit(2)
-		AssertSlice(t, QueryColumn[int](t, conn, page.ToSQL()), []int{3, 4})
-		AssertSlice(t, QueryColumn[int](t, conn, page.Offset(2).ToSQL()), []int{1, 2})
+		AssertSlice(t, QueryColumn[int](t, conn, page.MustSQL()), []int{3, 4})
+		AssertSlice(t, QueryColumn[int](t, conn, page.Offset(2).MustSQL()), []int{1, 2})
 	})
 }
 
@@ -107,19 +107,19 @@ func runJoins(t *testing.T, conn Conn, s Suite) {
 	on := syntax.Eq("c.id", "o.customer_id")
 
 	t.Run("Inner", func(t *testing.T) {
-		sql := from.InnerJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSQL()
+		sql := from.InnerJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Alice", 1}, {"Alice", 2}, {"Bob", 3}})
 	})
 
 	t.Run("Left", func(t *testing.T) {
-		sql := from.LeftJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSQL()
+		sql := from.LeftJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Carol", 0}, {"Alice", 1}, {"Alice", 2}, {"Bob", 3}})
 	})
 
 	t.Run("Right", func(t *testing.T) {
-		sql := from.RightJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSQL()
+		sql := from.RightJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Alice", 1}, {"Alice", 2}, {"Bob", 3}, {"?", 4}})
 	})
@@ -128,7 +128,7 @@ func runJoins(t *testing.T, conn Conn, s Suite) {
 		if !s.FullJoin {
 			t.Skip("FULL OUTER JOIN is not supported")
 		}
-		sql := from.FullJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSQL()
+		sql := from.FullJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Carol", 0}, {"Alice", 1}, {"Alice", 2}, {"Bob", 3}, {"?", 4}})
 	})
@@ -137,7 +137,7 @@ func runJoins(t *testing.T, conn Conn, s Suite) {
 		sql := s.From(syntax.As("customers", "a")).
 			Select(syntax.Fn("COUNT", "*")).
 			CrossJoin(syntax.As("customers", "b")).
-			ToSQL()
+			MustSQL()
 		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{9})
 	})
 }
@@ -163,7 +163,7 @@ func runSubqueries(t *testing.T, conn Conn, s Suite) {
 			Select("t.customer_id").
 			Where(syntax.Gt("t.total", syntax.P(1))).
 			OrderBy(syntax.Asc("t.customer_id")).
-			ToSQL()
+			MustSQL()
 		AssertSlice(t, QueryColumn[int](t, conn, sql, 600), []int{1, 99})
 	})
 
@@ -172,7 +172,7 @@ func runSubqueries(t *testing.T, conn Conn, s Suite) {
 			Select("c.name", syntax.As(syntax.Fn("COALESCE", "t.total", 0), "total")).
 			LeftJoin(syntax.As(totals, "t"), syntax.Eq("c.id", "t.customer_id")).
 			OrderBy(syntax.Asc("c.id")).
-			ToSQL()
+			MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanNameTotal, sql),
 			[]nameTotal{{"Alice", 3000}, {"Bob", 500}, {"Carol", 0}})
 	})
@@ -184,14 +184,14 @@ func runSubqueries(t *testing.T, conn Conn, s Suite) {
 		sql := s.From(syntax.As("customers", "c")).
 			Select("c.name", syntax.As(orderCount, "n")).
 			OrderBy(syntax.Asc("c.id")).
-			ToSQL()
+			MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanNameTotal, sql),
 			[]nameTotal{{"Alice", 2}, {"Bob", 1}, {"Carol", 0}})
 	})
 
 	t.Run("WhereIn", func(t *testing.T) {
 		buyers := s.From("orders").Select("customer_id")
-		sql := s.From("customers").Select("name").Where(syntax.In("id", buyers)).OrderBy(syntax.Asc("id")).ToSQL()
+		sql := s.From("customers").Select("name").Where(syntax.In("id", buyers)).OrderBy(syntax.Asc("id")).MustSQL()
 		AssertSlice(t, QueryColumn[string](t, conn, sql), []string{"Alice", "Bob"})
 	})
 }
@@ -215,7 +215,7 @@ func seedCustomersAndOrders(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(1), syntax.P(2)).
 			Values(syntax.P(3), syntax.P(4)).
 			Values(syntax.P(5), syntax.P(6)).
-			ToSQL(),
+			MustSQL(),
 		1, "Alice", 2, "Bob", 3, "Carol",
 	)
 	MustExec(t, conn,
@@ -225,7 +225,7 @@ func seedCustomersAndOrders(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(4), syntax.P(5), syntax.P(6)).
 			Values(syntax.P(7), syntax.P(8), syntax.P(9)).
 			Values(syntax.P(10), syntax.P(11), syntax.P(12)).
-			ToSQL(),
+			MustSQL(),
 		1, 1, 1000,
 		2, 1, 2000,
 		3, 2, 500,
@@ -254,7 +254,7 @@ func runCTE(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(13), syntax.P(14), syntax.P(15), syntax.P(16)).
 			Values(syntax.P(17), syntax.P(18), syntax.P(19), syntax.P(20)).
 			Values(syntax.P(21), syntax.P(22), syntax.P(23), syntax.P(24)).
-			ToSQL(),
+			MustSQL(),
 		1, "Alice", 5000, "2025-01-10",
 		2, "Alice", 3000, "2025-01-20",
 		3, "Bob", 8000, "2025-01-15",
@@ -272,7 +272,7 @@ func runCTE(t *testing.T, conn Conn, s Suite) {
 		GroupBy("rep_name").
 		Having(syntax.Gte(syntax.Fn("SUM", "amount"), syntax.P(3))).
 		OrderBy(syntax.Asc("rep_name")).
-		ToSQL()
+		MustSQL()
 
 	type repTotal struct {
 		name  string
@@ -303,7 +303,7 @@ func runRecursiveCTE(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(5), syntax.P(6)).
 			Values(syntax.P(7), syntax.P(8)).
 			Values(syntax.P(9), syntax.P(10)).
-			ToSQL(),
+			MustSQL(),
 		1, nil, 2, 1, 3, 1, 4, 2, 5, 4,
 	)
 
@@ -315,7 +315,7 @@ func runRecursiveCTE(t *testing.T, conn Conn, s Suite) {
 		WithRecursive("reports", anchor.UnionAll(step)).
 		Select("id").
 		OrderBy(syntax.Asc("id")).
-		ToSQL()
+		MustSQL()
 
 	AssertSlice(t, QueryColumn[int](t, conn, sql, 2), []int{4, 5})
 }
@@ -331,7 +331,7 @@ func runSetOperations(t *testing.T, conn Conn, s Suite) {
 		for i := range ids {
 			b = b.Values(syntax.P(i + 1))
 		}
-		MustExec(t, conn, b.ToSQL(), ids...)
+		MustExec(t, conn, b.MustSQL(), ids...)
 	}
 	insertIDs("premium", 1, 2, 2, 3)
 	insertIDs("newsletter", 2, 3, 4, 5)
@@ -357,7 +357,7 @@ func runSetOperations(t *testing.T, conn Conn, s Suite) {
 				t.Skip("INTERSECT ALL / EXCEPT ALL are not supported")
 			}
 			// A set operation has no overall ORDER BY in sqbl, so sort here.
-			got := QueryColumn[int](t, conn, tt.query.ToSQL())
+			got := QueryColumn[int](t, conn, tt.query.MustSQL())
 			slices.Sort(got)
 			AssertSlice(t, got, tt.want)
 		})
@@ -380,7 +380,7 @@ func runWindowFunctions(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
 			Values(syntax.P(4), syntax.P(5), syntax.P(6)).
 			Values(syntax.P(7), syntax.P(8), syntax.P(9)).
-			ToSQL(),
+			MustSQL(),
 		1, "Alice", 3000,
 		2, "Bob", 7000,
 		3, "Alice", 5000,
@@ -394,7 +394,7 @@ func runWindowFunctions(t *testing.T, conn Conn, s Suite) {
 			syntax.As(syntax.Over(syntax.Fn("SUM", "amount")).OrderBy("id").Rows("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"), "running"),
 		).
 		OrderBy(syntax.Asc("id")).
-		ToSQL()
+		MustSQL()
 
 	type row struct{ id, rank, repTotal, running int }
 	got := QueryRows(t, conn, func(r Rows) (row, error) {

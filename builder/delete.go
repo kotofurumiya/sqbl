@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
-	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
@@ -24,25 +23,20 @@ type DeleteBuilder struct {
 
 var _ Statement = DeleteBuilder{}
 
-// ToSQL renders the DELETE statement with a trailing semicolon.
-func (b DeleteBuilder) ToSQL() string {
-	d := requireDialect(b.dialect)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	buf.WriteByte(';')
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// ToSQL renders the statement with the builder's dialect and a trailing semicolon.
+func (b DeleteBuilder) ToSQL() (string, error) { return render(b, b.dialect, true) }
+
+// ToSQLWithDialect renders the statement with d and no trailing semicolon.
+func (b DeleteBuilder) ToSQLWithDialect(d dialect.Dialect) (string, error) {
+	return render(b, d, false)
 }
 
-// ToSQLWithDialect renders the DELETE statement using the given dialect, without a trailing semicolon.
-func (b DeleteBuilder) ToSQLWithDialect(d dialect.Dialect) string {
-	requireDialect(d)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// MustSQL is like ToSQL but panics on error.
+func (b DeleteBuilder) MustSQL() string { return must(b.ToSQL()) }
+
+// MustSQLWithDialect is like ToSQLWithDialect but panics on error.
+func (b DeleteBuilder) MustSQLWithDialect(d dialect.Dialect) string {
+	return must(b.ToSQLWithDialect(d))
 }
 
 func (b DeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {

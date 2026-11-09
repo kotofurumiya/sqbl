@@ -10,7 +10,7 @@ import (
 // No slice operations. Baseline for the minimum library overhead.
 func BenchmarkSimple(b *testing.B) {
 	for b.Loop() {
-		sqblpg.From("users").ToSQL()
+		sqblpg.From("users").MustSQL()
 	}
 }
 
@@ -22,7 +22,7 @@ func BenchmarkNoSliceCopy(b *testing.B) {
 		sqblpg.From("users").
 			Where(sqblpg.Eq("id", sqblpg.P(1))).
 			Limit(1).
-			ToSQL()
+			MustSQL()
 	}
 }
 
@@ -40,7 +40,7 @@ func BenchmarkWithSliceCopy(b *testing.B) {
 			LeftJoin(sqblpg.As("products", "p"), sqblpg.Eq("o.product_id", "p.id")).
 			Where(sqblpg.Eq("u.active", true)).
 			OrderBy(sqblpg.Asc("u.name")).
-			ToSQL()
+			MustSQL()
 	}
 }
 
@@ -72,6 +72,6 @@ func BenchmarkComplex(b *testing.B) {
 			Having(sqblpg.Gt(sqblpg.Fn("COUNT", "*"), 5)).
 			OrderBy(sqblpg.Desc("total")).
 			Limit(100).
-			ToSQL()
+			MustSQL()
 	}
 }

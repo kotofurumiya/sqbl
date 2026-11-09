@@ -17,7 +17,7 @@ func main() {
 	// 1. SELECT * — retrieve every column
 	// ---------------------------------------------------------------
 	// SELECT * FROM "employees";
-	sql01 := sqbl.From("employees").ToSQL()
+	sql01 := sqbl.From("employees").MustSQL()
 	fmt.Println(sql01)
 
 	// ---------------------------------------------------------------
@@ -26,7 +26,7 @@ func main() {
 	// SELECT * FROM "employees" WHERE "salary" > 50000;
 	sql02 := sqbl.From("employees").
 		Where(sqbl.Gt("salary", 50000)).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql02)
 
 	// ---------------------------------------------------------------
@@ -37,7 +37,7 @@ func main() {
 		Select("name", "salary").
 		OrderBy(sqbl.Desc("salary")).
 		Limit(5).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql03)
 
 	// ---------------------------------------------------------------
@@ -47,7 +47,7 @@ func main() {
 	sql04 := sqbl.From("employees").
 		Select("dept_id").
 		Distinct().
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql04)
 
 	// ---------------------------------------------------------------
@@ -60,7 +60,7 @@ func main() {
 			sqbl.Fn("SUM", "salary"),
 			sqbl.Fn("AVG", "salary"),
 		).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql05)
 
 	// ---------------------------------------------------------------
@@ -78,7 +78,7 @@ func main() {
 		).
 		GroupBy("dept_id").
 		OrderBy(sqbl.Desc("headcount")).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql06)
 
 	// ---------------------------------------------------------------
@@ -90,7 +90,7 @@ func main() {
 	sql07 := sqbl.From(sqbl.As("employees", "e")).
 		Select("e.name", sqbl.As("d.name", "dept")).
 		InnerJoin(sqbl.As("departments", "d"), sqbl.Eq("e.dept_id", "d.id")).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql07)
 
 	// ---------------------------------------------------------------
@@ -102,7 +102,7 @@ func main() {
 	sql08 := sqbl.From(sqbl.As("employees", "e")).
 		Select("e.name", sqbl.As("d.name", "dept")).
 		LeftJoin(sqbl.As("departments", "d"), sqbl.Eq("e.dept_id", "d.id")).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql08)
 
 	// ---------------------------------------------------------------
@@ -114,7 +114,7 @@ func main() {
 	sql09 := sqbl.From("employees").
 		Select("name", "salary").
 		Where(sqbl.Gt("salary", avgSalary)).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql09)
 
 	// ---------------------------------------------------------------
@@ -129,7 +129,7 @@ func main() {
 			sqbl.Eq("dept_id", sqbl.P(1)),
 			sqbl.Gt("salary", sqbl.P(2)),
 		)).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql10a)
 
 	// Named (:param) — useful for named-parameter drivers
@@ -140,7 +140,7 @@ func main() {
 			sqbl.Eq("dept_id", sqbl.P(":dept_id")),
 			sqbl.Gt("salary", sqbl.P(":min_salary")),
 		)).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql10b)
 
 	// Positional (?) — for drivers that use positional ? placeholders (e.g. MySQL, SQLite)
@@ -151,6 +151,6 @@ func main() {
 			sqbl.Eq("dept_id", sqbl.P()),
 			sqbl.Gt("salary", sqbl.P()),
 		)).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql10c)
 }

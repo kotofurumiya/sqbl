@@ -50,7 +50,7 @@ func TestUpdateBuilder_BranchIsolation(t *testing.T) {
 	left := base.Set("l", 4)
 	right := base.Set("r", 5)
 
-	sqltesting.AssertSQL(t, base.ToSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3;`)
-	sqltesting.AssertSQL(t, left.ToSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
-	sqltesting.AssertSQL(t, right.ToSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
+	sqltesting.AssertSQL(t, base.MustSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3;`)
+	sqltesting.AssertSQL(t, left.MustSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
+	sqltesting.AssertSQL(t, right.MustSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
 }

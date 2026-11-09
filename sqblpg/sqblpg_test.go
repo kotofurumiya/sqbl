@@ -31,7 +31,7 @@ func TestEntryPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSQL(), tt.want)
+			sqltesting.AssertSQL(t, tt.b.MustSQL(), tt.want)
 		})
 	}
 }
@@ -49,7 +49,7 @@ func TestDialectRendering(t *testing.T) {
 			sqblpg.Gt("o.amount", sqblpg.P(2)),
 		)).
 		GroupBy("u.id").
-		ToSQL()
+		MustSQL()
 	sqltesting.AssertSQL(t, got, `
 		SELECT "u"."id", "u"."nick""name", COUNT("o"."id") AS "orders"
 		FROM "users" AS "u"

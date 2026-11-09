@@ -52,7 +52,7 @@ func runSQLCases(t *testing.T, tests []sqlCase) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSQL(), tt.want)
+			sqltesting.AssertSQL(t, tt.b.MustSQL(), tt.want)
 		})
 	}
 }
@@ -85,15 +85,16 @@ func TestBuilder_RenderContract(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSQL(), tt.wantToSQL)
-			sqltesting.AssertSQL(t, tt.b.ToSQLWithDialect(mysql), tt.wantMySQL)
+			sqltesting.AssertSQL(t, tt.b.MustSQL(), tt.wantToSQL)
+			sqltesting.AssertSQL(t, tt.b.MustSQLWithDialect(mysql), tt.wantMySQL)
 		})
 	}
 }
 
-// TestBuilder_PanicsWithoutDialect checks that a missing dialect fails loudly
-// instead of rendering SQL with no quoting rules.
-func TestBuilder_PanicsWithoutDialect(t *testing.T) {
+// TestBuilder_FailsWithoutDialect checks that a missing dialect is reported
+// instead of rendering SQL with no quoting rules, and that the Must variants
+// turn that report into a panic.
+func TestBuilder_FailsWithoutDialect(t *testing.T) {
 	t.Parallel()
 
 	builders := []struct {
@@ -113,13 +114,16 @@ func TestBuilder_PanicsWithoutDialect(t *testing.T) {
 		{"drop database", builder.DropDatabaseBuilder{}},
 	}
 	for _, tt := range builders {
-		t.Run(tt.name+"/ToSQL", func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assertPanics(t, func() { tt.b.ToSQL() })
-		})
-		t.Run(tt.name+"/ToSQLWithDialect(nil)", func(t *testing.T) {
-			t.Parallel()
-			assertPanics(t, func() { tt.b.ToSQLWithDialect(nil) })
+			if _, err := tt.b.ToSQL(); err == nil {
+				t.Error("ToSQL: want an error")
+			}
+			if _, err := tt.b.ToSQLWithDialect(nil); err == nil {
+				t.Error("ToSQLWithDialect(nil): want an error")
+			}
+			assertPanics(t, func() { tt.b.MustSQL() })
+			assertPanics(t, func() { tt.b.MustSQLWithDialect(nil) })
 		})
 	}
 }

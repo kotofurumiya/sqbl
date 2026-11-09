@@ -55,7 +55,7 @@ func TestCreateIndexBuilder_BranchIsolation(t *testing.T) {
 	left := base.Columns("l")
 	right := base.Columns("r")
 
-	sqltesting.AssertSQL(t, base.ToSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c");`)
-	sqltesting.AssertSQL(t, left.ToSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "l");`)
-	sqltesting.AssertSQL(t, right.ToSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "r");`)
+	sqltesting.AssertSQL(t, base.MustSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c");`)
+	sqltesting.AssertSQL(t, left.MustSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "l");`)
+	sqltesting.AssertSQL(t, right.MustSQL(), `CREATE INDEX "idx" ON "t" ("a", "b", "c", "r");`)
 }

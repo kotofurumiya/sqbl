@@ -135,7 +135,7 @@ func TestOnDuplicateKeyUpdate(t *testing.T) {
 	insert := sqblmysql.InsertInto("tags").
 		Columns("tag", "label", "hits").
 		Values(sqblmysql.P(), sqblmysql.P(), sqblmysql.P())
-	row := sqblmysql.From("tags").Select("label", "hits").ToSQL()
+	row := sqblmysql.From("tags").Select("label", "hits").MustSQL()
 	assertRow := func(wantLabel string, wantHits int) {
 		t.Helper()
 		var label string
@@ -146,14 +146,14 @@ func TestOnDuplicateKeyUpdate(t *testing.T) {
 		}
 	}
 
-	shared.MustExec(t, conn, insert.OnDuplicateKeyUpdate("hits = hits + 1").ToSQL(), "go", "Go", 1)
-	shared.MustExec(t, conn, insert.OnDuplicateKeyUpdate("hits = hits + 1").ToSQL(), "go", "Ignored", 1)
+	shared.MustExec(t, conn, insert.OnDuplicateKeyUpdate("hits = hits + 1").MustSQL(), "go", "Go", 1)
+	shared.MustExec(t, conn, insert.OnDuplicateKeyUpdate("hits = hits + 1").MustSQL(), "go", "Ignored", 1)
 	assertRow("Go", 2)
 
 	structured := insert.
 		OnDuplicateKeyUpdateSet("label", sqblmysql.Fn("VALUES", "label")).
 		OnDuplicateKeyUpdateSet("hits", sqblmysql.Raw("`hits` + 10")).
-		ToSQL()
+		MustSQL()
 	shared.MustExec(t, conn, structured, "go", "Golang", 1)
 	assertRow("Golang", 12)
 }

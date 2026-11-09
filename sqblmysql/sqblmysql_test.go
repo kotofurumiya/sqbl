@@ -31,7 +31,7 @@ func TestEntryPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSQL(), tt.want)
+			sqltesting.AssertSQL(t, tt.b.MustSQL(), tt.want)
 		})
 	}
 }
@@ -50,7 +50,7 @@ func TestDialectRendering(t *testing.T) {
 			sqblmysql.Gt("o.amount", sqblmysql.P(2)),
 		)).
 		GroupBy("u.id").
-		ToSQL()
+		MustSQL()
 	sqltesting.AssertSQL(t, got, "SELECT `u`.`id`, `u`.`nick``name`, COUNT(`o`.`id`) AS `orders` "+
 		"FROM `users` AS `u` "+
 		"LEFT JOIN `orders` AS `o` ON `u`.`id` = `o`.`user_id` "+

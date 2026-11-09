@@ -2,32 +2,57 @@ package builder
 
 import (
 	"bytes"
+	"errors"
 
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
+	"github.com/kotofurumiya/sqbl/internal/sqlerr"
 )
 
 // Statement is implemented by all SQL statement builders.
-// It provides a common interface for rendering SQL statements.
+//
+// Rendering fails with an error, instead of producing broken SQL, when the
+// statement holds input that has no safe SQL form, such as a value of an
+// unsupported Go type or a missing dialect. The Must variants panic instead,
+// for statements built from constants where a failure is a programming error.
 type Statement interface {
-	// ToSQL renders the statement with a trailing semicolon using the builder's dialect.
-	// It panics if the builder has no dialect.
-	ToSQL() string
-	// ToSQLWithDialect renders the statement using the given dialect, without a trailing semicolon.
-	// It panics if d is nil.
-	ToSQLWithDialect(d dialect.Dialect) string
+	// ToSQL renders the statement with the builder's own dialect and a trailing semicolon.
+	ToSQL() (string, error)
+	// ToSQLWithDialect renders the statement with d and no trailing semicolon.
+	ToSQLWithDialect(d dialect.Dialect) (string, error)
+	// MustSQL is like ToSQL but panics on error.
+	MustSQL() string
+	// MustSQLWithDialect is like ToSQLWithDialect but panics on error.
+	MustSQLWithDialect(d dialect.Dialect) string
 }
 
-var _ Statement = SelectBuilder{}
+// renderer is the rendering core every builder implements.
+type renderer interface {
+	renderSQL(buf *bytes.Buffer, d dialect.Dialect)
+}
 
-// requireDialect returns d, or panics with a hint when no dialect is available.
-// A missing dialect is a programming error that shows up on the first render,
-// so it is reported by panic rather than by an error return on every call.
-func requireDialect(d dialect.Dialect) dialect.Dialect {
+// render runs r.renderSQL with d and turns a failure raised inside any fragment into an error.
+func render(r renderer, d dialect.Dialect, semicolon bool) (sql string, err error) {
 	if d == nil {
-		panic("sqbl: no dialect to render with; use ToSQLWithDialect, " +
+		return "", errors.New("sqbl: no dialect to render with; use ToSQLWithDialect, " +
 			"or start from a dialect package such as sqblpg")
 	}
-	return d
+	buf := sqlbuf.GetStringBuffer()
+	defer sqlbuf.PutStringBuffer(buf)
+	defer sqlerr.Catch(&err)
+	r.renderSQL(buf, d)
+	if semicolon {
+		buf.WriteByte(';')
+	}
+	return buf.String(), nil
+}
+
+// must returns sql, or panics with err.
+func must(sql string, err error) string {
+	if err != nil {
+		panic(err)
+	}
+	return sql
 }
 
 // quoteIdentifiers writes each name quoted by the dialect into buf, separated by ", ".

@@ -19,7 +19,7 @@ func runCreateTable(t *testing.T, conn Conn, s Suite) {
 		Column("age", "INTEGER").
 		PrimaryKey("id").
 		Check(syntax.Gte("age", 0)).
-		ToSQL()
+		MustSQL()
 	MustExec(t, conn, createUsers)
 	// IF NOT EXISTS makes a repeated CREATE a no-op instead of an error.
 	MustExec(t, conn, createUsers)
@@ -31,15 +31,15 @@ func runCreateTable(t *testing.T, conn Conn, s Suite) {
 			PrimaryKey("id").
 			Unique("user_id", "code").
 			ForeignKey([]string{"user_id"}, "it_ct_users", []string{"id"}, "ON DELETE CASCADE").
-			ToSQL(),
+			MustSQL(),
 	)
 
-	insertUser := s.InsertInto("it_ct_users").Columns("id", "email", "age").Values(syntax.P(1), syntax.P(2), syntax.P(3)).ToSQL()
-	insertOrder := s.InsertInto("it_ct_orders").Columns("id", "user_id", "code").Values(syntax.P(1), syntax.P(2), syntax.P(3)).ToSQL()
+	insertUser := s.InsertInto("it_ct_users").Columns("id", "email", "age").Values(syntax.P(1), syntax.P(2), syntax.P(3)).MustSQL()
+	insertOrder := s.InsertInto("it_ct_orders").Columns("id", "user_id", "code").Values(syntax.P(1), syntax.P(2), syntax.P(3)).MustSQL()
 
 	MustExec(t, conn, insertUser, 1, "alice@example.com", 30)
 	AssertSlice(t,
-		QueryColumn[string](t, conn, s.From("it_ct_users").Select("status").ToSQL()),
+		QueryColumn[string](t, conn, s.From("it_ct_users").Select("status").MustSQL()),
 		[]string{"active"})
 	MustFail(t, conn, "column UNIQUE", insertUser, 2, "alice@example.com", 30)
 	MustFail(t, conn, "CHECK age >= 0", insertUser, 3, "bob@example.com", -1)
@@ -48,7 +48,7 @@ func runCreateTable(t *testing.T, conn Conn, s Suite) {
 	MustFail(t, conn, "table UNIQUE (user_id, code)", insertOrder, 2, 1, "A")
 	MustFail(t, conn, "FOREIGN KEY", insertOrder, 3, 999, "B")
 
-	MustExec(t, conn, s.DeleteFrom("it_ct_users").Where(syntax.Eq("id", syntax.P(1))).ToSQL(), 1)
+	MustExec(t, conn, s.DeleteFrom("it_ct_users").Where(syntax.Eq("id", syntax.P(1))).MustSQL(), 1)
 	AssertCount(t, conn, "it_ct_orders", 0)
 }
 
@@ -67,11 +67,11 @@ func runCreateIndex(t *testing.T, conn Conn, s Suite) {
 	insert := s.InsertInto("it_ci_accounts").
 		Columns("id", "handle", "email", "active").
 		Values(syntax.P(1), syntax.P(2), syntax.P(3), syntax.P(4)).
-		ToSQL()
+		MustSQL()
 
 	t.Run("Unique", func(t *testing.T) {
 		MustExec(t, conn,
-			s.CreateIndex("it_ci_accounts_handle").On("it_ci_accounts").Columns("handle").Unique().IfNotExists().ToSQL())
+			s.CreateIndex("it_ci_accounts_handle").On("it_ci_accounts").Columns("handle").Unique().IfNotExists().MustSQL())
 		MustExec(t, conn, insert, 1, "alice", "alice@example.com", 0)
 		MustFail(t, conn, "unique index on handle", insert, 2, "alice", "other@example.com", 0)
 	})
@@ -86,7 +86,7 @@ func runCreateIndex(t *testing.T, conn Conn, s Suite) {
 				Columns("email").
 				Unique().
 				Where(syntax.Eq("active", 1)).
-				ToSQL())
+				MustSQL())
 		// Inactive rows fall outside the index, so they may share an email.
 		MustExec(t, conn, insert, 10, "bob1", "bob@example.com", 0)
 		MustExec(t, conn, insert, 11, "bob2", "bob@example.com", 0)
@@ -110,32 +110,32 @@ func runSchemaEvolution(t *testing.T, conn Conn, s Suite) {
 			Column("id", "INTEGER", "NOT NULL").
 			Column("name", "VARCHAR(32)", "NOT NULL").
 			PrimaryKey("id").
-			ToSQL())
-	MustExec(t, conn, s.InsertInto(table).Columns("id", "name").Values(syntax.P(1), syntax.P(2)).ToSQL(), 1, "Alice")
+			MustSQL())
+	MustExec(t, conn, s.InsertInto(table).Columns("id", "name").Values(syntax.P(1), syntax.P(2)).MustSQL(), 1, "Alice")
 
-	MustExec(t, conn, s.AlterTable(table).AddColumn("bio", "VARCHAR(64)").ToSQL())
-	MustExec(t, conn, s.Update(table).Set("bio", syntax.P(1)).ToSQL(), "hello")
-	MustExec(t, conn, s.AlterTable(table).RenameColumn("bio", "about").ToSQL())
-	AssertSlice(t, QueryColumn[string](t, conn, s.From(table).Select("about").ToSQL()), []string{"hello"})
+	MustExec(t, conn, s.AlterTable(table).AddColumn("bio", "VARCHAR(64)").MustSQL())
+	MustExec(t, conn, s.Update(table).Set("bio", syntax.P(1)).MustSQL(), "hello")
+	MustExec(t, conn, s.AlterTable(table).RenameColumn("bio", "about").MustSQL())
+	AssertSlice(t, QueryColumn[string](t, conn, s.From(table).Select("about").MustSQL()), []string{"hello"})
 
-	MustExec(t, conn, s.AlterTable(table).DropColumn("about").ToSQL())
+	MustExec(t, conn, s.AlterTable(table).DropColumn("about").MustSQL())
 	// An UPDATE target, unlike a SELECT expression, cannot fall back to a
 	// string literal in SQLite, so it reliably fails on a missing column.
-	MustFail(t, conn, "dropped column", s.Update(table).Set("about", syntax.P(1)).ToSQL(), "x")
+	MustFail(t, conn, "dropped column", s.Update(table).Set("about", syntax.P(1)).MustSQL(), "x")
 
-	MustExec(t, conn, s.AlterTable(table).RenameTable(renamed).ToSQL())
-	MustFail(t, conn, "old table name", s.From(table).Select("id").ToSQL())
-	AssertSlice(t, QueryColumn[string](t, conn, s.From(renamed).Select("name").ToSQL()), []string{"Alice"})
+	MustExec(t, conn, s.AlterTable(table).RenameTable(renamed).MustSQL())
+	MustFail(t, conn, "old table name", s.From(table).Select("id").MustSQL())
+	AssertSlice(t, QueryColumn[string](t, conn, s.From(renamed).Select("name").MustSQL()), []string{"Alice"})
 
-	MustExec(t, conn, s.CreateIndex(index).On(renamed).Columns("name").ToSQL())
+	MustExec(t, conn, s.CreateIndex(index).On(renamed).Columns("name").MustSQL())
 	dropIndex := s.DropIndex(index).IfExists()
 	if s.DropIndexOnTable {
 		dropIndex = dropIndex.On(renamed)
 	}
-	MustExec(t, conn, dropIndex.ToSQL())
+	MustExec(t, conn, dropIndex.MustSQL())
 	// IF EXISTS makes dropping the already-dropped index a no-op.
-	MustExec(t, conn, dropIndex.ToSQL())
+	MustExec(t, conn, dropIndex.MustSQL())
 
-	MustExec(t, conn, s.DropTable(renamed).IfExists().ToSQL())
-	MustFail(t, conn, "dropped table", s.From(renamed).Select("id").ToSQL())
+	MustExec(t, conn, s.DropTable(renamed).IfExists().MustSQL())
+	MustFail(t, conn, "dropped table", s.From(renamed).Select("id").MustSQL())
 }

@@ -30,7 +30,7 @@ func TestRendersPerDialect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, q.ToSQLWithDialect(tt.d), tt.want)
+			sqltesting.AssertSQL(t, q.MustSQLWithDialect(tt.d), tt.want)
 		})
 	}
 }
@@ -58,14 +58,14 @@ func TestEntryPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSQLWithDialect(&dialect.Postgres{}), tt.want)
+			sqltesting.AssertSQL(t, tt.b.MustSQLWithDialect(&dialect.Postgres{}), tt.want)
 		})
 	}
 }
 
-// Rendering without a dialect is a programming error, so every builder must
-// panic with a hint pointing at ToSQLWithDialect instead of emitting broken SQL.
-func TestPanicsWithoutDialect(t *testing.T) {
+// TestErrorsWithoutDialect checks that the dialect-free builders refuse ToSQL
+// and point the caller to ToSQLWithDialect.
+func TestErrorsWithoutDialect(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
@@ -86,20 +86,10 @@ func TestPanicsWithoutDialect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assertDialectPanic(t, "ToSQL", func() { tt.b.ToSQL() })
-			assertDialectPanic(t, "ToSQLWithDialect(nil)", func() { tt.b.ToSQLWithDialect(nil) })
+			_, err := tt.b.ToSQL()
+			if err == nil || !strings.Contains(err.Error(), "ToSQLWithDialect") {
+				t.Errorf("want an error mentioning ToSQLWithDialect, got %v", err)
+			}
 		})
 	}
-}
-
-func assertDialectPanic(t *testing.T, call string, f func()) {
-	t.Helper()
-	defer func() {
-		t.Helper()
-		msg, ok := recover().(string)
-		if !ok || !strings.Contains(msg, "ToSQLWithDialect") {
-			t.Errorf("%s: want a panic mentioning ToSQLWithDialect, got %q", call, msg)
-		}
-	}()
-	f()
 }

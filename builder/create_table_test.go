@@ -78,12 +78,12 @@ func TestCreateTableBuilder_BranchIsolation(t *testing.T) {
 	left := base.Column("l", "INT").PrimaryKey("l").Options("L")
 	right := base.Column("r", "INT").Check(syntax.Gt("r", 0)).Options("R")
 
-	sqltesting.AssertSQL(t, base.ToSQL(), `
+	sqltesting.AssertSQL(t, base.MustSQL(), `
 		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c")) A B C;`)
-	sqltesting.AssertSQL(t, left.ToSQL(), `
+	sqltesting.AssertSQL(t, left.MustSQL(), `
 		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, "l" INT,
 		UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c"), PRIMARY KEY ("l")) A B C L;`)
-	sqltesting.AssertSQL(t, right.ToSQL(), `
+	sqltesting.AssertSQL(t, right.MustSQL(), `
 		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, "r" INT,
 		UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c"), CHECK ("r" > 0)) A B C R;`)
 }

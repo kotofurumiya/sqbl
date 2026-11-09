@@ -317,7 +317,7 @@ func TestSelectBuilder_AllClauses(t *testing.T) {
 		Distinct().
 		With("recent", newSelect().From("orders")).
 		UnionAll(newSelect().From("archived_totals").Select("user_id", "total")).
-		ToSQL()
+		MustSQL()
 
 	sqltesting.AssertSQL(t, got, `
 		WITH "recent" AS (SELECT * FROM "orders")
@@ -349,15 +349,15 @@ func TestSelectBuilder_BranchIsolation(t *testing.T) {
 	left := base.With("l", cte).CrossJoin("jl").Except(other)
 	right := base.With("r", cte).CrossJoin("jr").Intersect(other)
 
-	sqltesting.AssertSQL(t, base.ToSQL(), `
+	sqltesting.AssertSQL(t, base.MustSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s";`)
-	sqltesting.AssertSQL(t, left.ToSQL(), `
+	sqltesting.AssertSQL(t, left.MustSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "l" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jl"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" EXCEPT SELECT * FROM "s";`)
-	sqltesting.AssertSQL(t, right.ToSQL(), `
+	sqltesting.AssertSQL(t, right.MustSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "r" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jr"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" INTERSECT SELECT * FROM "s";`)

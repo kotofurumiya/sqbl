@@ -11,7 +11,7 @@ func main() {
 	sql1 := sqbl.Update("users").
 		Set("name", sqbl.P(1)).
 		Where(sqbl.Eq("id", sqbl.P(2))).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql1)
 
 	// Update multiple columns at once
@@ -20,7 +20,7 @@ func main() {
 		Set("name", sqbl.P(1)).
 		Set("email", sqbl.P(2)).
 		Where(sqbl.Eq("id", sqbl.P(3))).
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql2)
 
 	// UPDATE ... RETURNING to get the updated row
@@ -29,6 +29,6 @@ func main() {
 		Set("name", sqbl.P(1)).
 		Where(sqbl.Eq("id", sqbl.P(2))).
 		Returning("id", "name", "updated_at").
-		ToSQL()
+		MustSQL()
 	fmt.Println(sql3)
 }

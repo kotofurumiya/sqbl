@@ -147,7 +147,7 @@ func TestInsertBuilder_AllClauses(t *testing.T) {
 		Columns("name", "count").
 		Into("tags").
 		OrIgnore().
-		ToSQL()
+		MustSQL()
 
 	sqltesting.AssertSQL(t, got, `
 		INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2)
@@ -170,15 +170,15 @@ func TestInsertBuilder_BranchIsolation(t *testing.T) {
 	left := base.Values(4).DoUpdateSet("l", 4).OnDuplicateKeyUpdate(`"l" = 4`)
 	right := base.Values(5).DoUpdate(`"r" = 5`).OnDuplicateKeyUpdateSet("r", 5)
 
-	sqltesting.AssertSQL(t, base.ToSQL(), `
+	sqltesting.AssertSQL(t, base.MustSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3;`)
-	sqltesting.AssertSQL(t, left.ToSQL(), `
+	sqltesting.AssertSQL(t, left.MustSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3), (4)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "l" = 4
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
-	sqltesting.AssertSQL(t, right.ToSQL(), `
+	sqltesting.AssertSQL(t, right.MustSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3), (5)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "r" = 5
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
