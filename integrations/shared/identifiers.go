@@ -29,7 +29,7 @@ func runIdentifiers(t *testing.T, conn Conn, s Suite) {
 		s.InsertInto("order").
 			Columns("id", "select", mixed, quoted, evil).
 			Values(syntax.P(1), syntax.P(2), syntax.P(3), syntax.P(4), syntax.P(5)).
-			ToSql(),
+			MustSQL(),
 		1, "a", "b", "c", "d",
 	)
 
@@ -37,7 +37,7 @@ func runIdentifiers(t *testing.T, conn Conn, s Suite) {
 	sql := s.From(syntax.As("order", "o")).
 		Select("o.select", "o."+mixed, "o."+quoted, "o."+evil).
 		Where(syntax.And(syntax.Eq("o.select", syntax.P(1)), syntax.Eq("o."+evil, syntax.P(2)))).
-		ToSql()
+		MustSQL()
 
 	var got [4]string
 	MustScan(t, conn, sql, []any{"a", "d"}, &got[0], &got[1], &got[2], &got[3])
@@ -65,18 +65,37 @@ func runInjectionValues(t *testing.T, conn Conn, s Suite) {
 		"_",
 		"go%lang",
 	}
-	insert := s.InsertInto("notes").Columns("id", "content").Values(syntax.P(1), syntax.P(2)).ToSql()
+	insert := s.InsertInto("notes").Columns("id", "content").Values(syntax.P(1), syntax.P(2)).MustSQL()
 	for i, p := range payloads {
 		MustExec(t, conn, insert, i+1, p)
 	}
 
-	all := s.From("notes").Select("content").OrderBy(syntax.Asc("id")).ToSql()
+	all := s.From("notes").Select("content").OrderBy(syntax.Asc("id")).MustSQL()
 	AssertSlice(t, QueryColumn[string](t, conn, all), payloads)
 
-	match := s.From("notes").Select("id").Where(syntax.Eq("content", syntax.P(1))).ToSql()
+	match := s.From("notes").Select("id").Where(syntax.Eq("content", syntax.P(1))).MustSQL()
 	for i, p := range payloads {
 		AssertSlice(t, QueryColumn[int](t, conn, match, p), []int{i + 1})
 	}
+
+	// Values that cannot be written safely as SQL must stop the render instead
+	// of reaching the database. A named string type used to be pasted in as-is.
+	t.Run("RefusedBeforeExecution", func(t *testing.T) {
+		type role string
+		refused := []struct {
+			name string
+			b    interface{ ToSQL() (string, error) }
+		}{
+			{"named string value", s.From("notes").Where(syntax.Eq("content", role("' OR '1'='1")))},
+			{"placeholder name", s.From("notes").Where(syntax.Eq("content", syntax.P("x' OR '1'='1")))},
+		}
+		for _, tt := range refused {
+			if sql, err := tt.b.ToSQL(); err == nil {
+				t.Errorf("%s: rendered %q; want an error", tt.name, sql)
+			}
+		}
+		AssertCount(t, conn, "notes", len(payloads))
+	})
 }
 
 // runInjectionIdentifiers passes a payload as an identifier in each position
@@ -86,14 +105,14 @@ func runInjectionValues(t *testing.T, conn Conn, s Suite) {
 // query must succeed.
 func runInjectionIdentifiers(t *testing.T, conn Conn, s Suite) {
 	MustExec(t, conn, `CREATE TEMPORARY TABLE victims (id INTEGER PRIMARY KEY)`)
-	MustExec(t, conn, s.InsertInto("victims").Columns("id").Values(1).ToSql())
+	MustExec(t, conn, s.InsertInto("victims").Columns("id").Values(1).MustSQL())
 
 	const payload = "id; DROP TABLE victims; --"
 	unknown := []struct{ name, sql string }{
-		{"From", s.From(payload).Select("id").ToSql()},
-		{"Select", s.From("victims").Select(payload).ToSql()},
-		{"Where", s.From("victims").Select("id").Where(syntax.Eq(payload, 1)).ToSql()},
-		{"OrderBy", s.From("victims").Select("id").OrderBy(syntax.Asc(payload)).ToSql()},
+		{"From", s.From(payload).Select("id").MustSQL()},
+		{"Select", s.From("victims").Select(payload).MustSQL()},
+		{"Where", s.From("victims").Select("id").Where(syntax.Eq(payload, 1)).MustSQL()},
+		{"OrderBy", s.From("victims").Select("id").OrderBy(syntax.Asc(payload)).MustSQL()},
 	}
 	for _, tt := range unknown {
 		t.Run(tt.name, func(t *testing.T) {
@@ -105,7 +124,7 @@ func runInjectionIdentifiers(t *testing.T, conn Conn, s Suite) {
 	}
 
 	t.Run("Alias", func(t *testing.T) {
-		sql := s.From("victims").Select(syntax.As("id", payload)).ToSql()
+		sql := s.From("victims").Select(syntax.As("id", payload)).MustSQL()
 		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{1})
 		AssertCount(t, conn, "victims", 1)
 	})

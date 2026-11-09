@@ -20,17 +20,17 @@ func TestRendersPerDialect(t *testing.T) {
 
 	tests := []struct {
 		name string
-		d    dialect.SqlDialect
+		d    dialect.Dialect
 		want string
 	}{
-		{"PostgreSQL", &dialect.PostgresDialect{}, `SELECT "u"."id" FROM "users" WHERE "u"."active" = TRUE AND "u"."id" = $1`},
-		{"MySQL", &dialect.MysqlDialect{}, "SELECT `u`.`id` FROM `users` WHERE `u`.`active` = TRUE AND `u`.`id` = ?"},
-		{"SQLite", &dialect.SqliteDialect{}, `SELECT "u"."id" FROM "users" WHERE "u"."active" = 1 AND "u"."id" = ?1`},
+		{"PostgreSQL", &dialect.Postgres{}, `SELECT "u"."id" FROM "users" WHERE "u"."active" = TRUE AND "u"."id" = $1`},
+		{"MySQL", &dialect.MySQL{}, "SELECT `u`.`id` FROM `users` WHERE `u`.`active` = TRUE AND `u`.`id` = ?"},
+		{"SQLite", &dialect.SQLite{}, `SELECT "u"."id" FROM "users" WHERE "u"."active" = 1 AND "u"."id" = ?1`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, q.ToSqlWithDialect(tt.d), tt.want)
+			sqltesting.AssertSQL(t, q.MustSQLWithDialect(tt.d), tt.want)
 		})
 	}
 }
@@ -39,7 +39,7 @@ func TestEntryPoints(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		b    builder.SqlBuilder
+		b    builder.Statement
 		want string
 	}{
 		{"From", sqbl.From("users"), `SELECT * FROM "users"`},
@@ -58,18 +58,18 @@ func TestEntryPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSqlWithDialect(&dialect.PostgresDialect{}), tt.want)
+			sqltesting.AssertSQL(t, tt.b.MustSQLWithDialect(&dialect.Postgres{}), tt.want)
 		})
 	}
 }
 
-// Rendering without a dialect is a programming error, so every builder must
-// panic with a hint pointing at ToSqlWithDialect instead of emitting broken SQL.
-func TestPanicsWithoutDialect(t *testing.T) {
+// TestErrorsWithoutDialect checks that the dialect-free builders refuse ToSQL
+// and point the caller to ToSQLWithDialect.
+func TestErrorsWithoutDialect(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		b    builder.SqlBuilder
+		b    builder.Statement
 	}{
 		{"From", sqbl.From("users")},
 		{"InsertInto", sqbl.InsertInto("users")},
@@ -86,20 +86,10 @@ func TestPanicsWithoutDialect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assertDialectPanic(t, "ToSql", func() { tt.b.ToSql() })
-			assertDialectPanic(t, "ToSqlWithDialect(nil)", func() { tt.b.ToSqlWithDialect(nil) })
+			_, err := tt.b.ToSQL()
+			if err == nil || !strings.Contains(err.Error(), "ToSQLWithDialect") {
+				t.Errorf("want an error mentioning ToSQLWithDialect, got %v", err)
+			}
 		})
 	}
-}
-
-func assertDialectPanic(t *testing.T, call string, f func()) {
-	t.Helper()
-	defer func() {
-		t.Helper()
-		msg, ok := recover().(string)
-		if !ok || !strings.Contains(msg, "ToSqlWithDialect") {
-			t.Errorf("%s: want a panic mentioning ToSqlWithDialect, got %q", call, msg)
-		}
-	}()
-	f()
 }

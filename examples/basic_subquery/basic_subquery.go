@@ -19,7 +19,7 @@ func main() {
 	sql1 := sqbl.From(sqbl.As(sub, "sub")).
 		Select("sub.user_id", "sub.total").
 		Where(sqbl.Gt("sub.total", sqbl.P(1))).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql1)
 
 	// Subquery in WHERE with IN
@@ -31,7 +31,7 @@ func main() {
 	sql2 := sqbl.From("users").
 		Select("id", "name").
 		Where(sqbl.In("id", paidUsersSub)).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql2)
 
 	// UNION: combine results from two queries
@@ -40,6 +40,6 @@ func main() {
 	// SELECT "id", "name" FROM "users" WHERE "created_at" > $1;
 	admins := sqbl.From("users").Select("id", "name").Where(sqbl.Eq("role", sqbl.Raw("'admin'")))
 	newUsers := sqbl.From("users").Select("id", "name").Where(sqbl.Gt("created_at", sqbl.P(1)))
-	sql3 := admins.Union(newUsers).ToSql()
+	sql3 := admins.Union(newUsers).MustSQL()
 	fmt.Println(sql3)
 }

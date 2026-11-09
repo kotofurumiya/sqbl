@@ -23,7 +23,7 @@ func main() {
 		Column("created_at", "TIMESTAMPTZ", "NOT NULL", "DEFAULT NOW()").
 		PrimaryKey("id").
 		Unique("email").
-		ToSql()
+		MustSQL()
 	fmt.Println(sql1)
 
 	// CREATE TABLE with foreign key
@@ -41,36 +41,36 @@ func main() {
 		Column("title", "TEXT", "NOT NULL").
 		PrimaryKey("id").
 		ForeignKey([]string{"user_id"}, "users", []string{"id"}, "ON DELETE CASCADE").
-		ToSql()
+		MustSQL()
 	fmt.Println(sql2)
 
 	// CREATE INDEX
 	// CREATE INDEX "idx_posts_user_id" ON "posts" ("user_id");
-	sql3 := sqbl.CreateIndex("idx_posts_user_id").On("posts").Columns("user_id").ToSql()
+	sql3 := sqbl.CreateIndex("idx_posts_user_id").On("posts").Columns("user_id").MustSQL()
 	fmt.Println(sql3)
 
 	// CREATE UNIQUE INDEX
 	// CREATE UNIQUE INDEX "idx_users_email" ON "users" ("email");
-	sql4 := sqbl.CreateIndex("idx_users_email").On("users").Columns("email").Unique().ToSql()
+	sql4 := sqbl.CreateIndex("idx_users_email").On("users").Columns("email").Unique().MustSQL()
 	fmt.Println(sql4)
 
 	// ALTER TABLE: add column
 	// ALTER TABLE "users" ADD COLUMN "bio" TEXT;
-	sql5 := sqbl.AlterTable("users").AddColumn("bio", "TEXT").ToSql()
+	sql5 := sqbl.AlterTable("users").AddColumn("bio", "TEXT").MustSQL()
 	fmt.Println(sql5)
 
 	// ALTER TABLE: rename column
 	// ALTER TABLE "users" RENAME COLUMN "name" TO "full_name";
-	sql6 := sqbl.AlterTable("users").RenameColumn("name", "full_name").ToSql()
+	sql6 := sqbl.AlterTable("users").RenameColumn("name", "full_name").MustSQL()
 	fmt.Println(sql6)
 
 	// DROP TABLE
 	// DROP TABLE IF EXISTS "posts" CASCADE;
-	sql7 := sqbl.DropTable("posts").IfExists().Cascade().ToSql()
+	sql7 := sqbl.DropTable("posts").IfExists().Cascade().MustSQL()
 	fmt.Println(sql7)
 
 	// DROP INDEX
 	// DROP INDEX IF EXISTS "idx_users_email";
-	sql8 := sqbl.DropIndex("idx_users_email").IfExists().ToSql()
+	sql8 := sqbl.DropIndex("idx_users_email").IfExists().MustSQL()
 	fmt.Println(sql8)
 }

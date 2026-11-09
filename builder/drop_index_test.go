@@ -2,7 +2,7 @@ package builder_test
 
 import "testing"
 
-func TestSqlDropIndexBuilder_Clauses(t *testing.T) {
+func TestDropIndexBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	idx := newDropIndex().Name("idx_users_email")
 

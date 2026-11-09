@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlUpdateBuilder_Clauses(t *testing.T) {
+func TestUpdateBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	users := newUpdate().Table("users")
 
@@ -31,26 +31,27 @@ func TestSqlUpdateBuilder_Clauses(t *testing.T) {
 			want: `UPDATE "users" SET "name" = $1 WHERE "id" = $2 RETURNING "id", "name";`,
 		},
 		{
-			name: "where and returning are replaced by later calls",
+			// Each Where narrows the update further; Returning is replaced.
+			name: "where accumulates with and while returning is replaced",
 			b: users.Set("name", syntax.P(1)).
-				Where(syntax.Eq("old", 1)).Where(syntax.Eq("id", syntax.P(2))).
-				Returning("old").Returning("id"),
-			want: `UPDATE "users" SET "name" = $1 WHERE "id" = $2 RETURNING "id";`,
+				Where(syntax.Eq("tenant_id", syntax.P(2))).Where(nil).Where(syntax.Eq("id", syntax.P(3))).
+				Returning("old").Returning("*"),
+			want: `UPDATE "users" SET "name" = $1 WHERE "tenant_id" = $2 AND "id" = $3 RETURNING *;`,
 		},
 	})
 }
 
-// TestSqlUpdateBuilder_BranchIsolation checks that deriving two statements from
+// TestUpdateBuilder_BranchIsolation checks that deriving two statements from
 // a shared base does not leak assignments between them. The base holds three
 // assignments so that a backing array with spare capacity would be shared if
 // Set appended in place.
-func TestSqlUpdateBuilder_BranchIsolation(t *testing.T) {
+func TestUpdateBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	base := newUpdate().Table("t").Set("a", 1).Set("b", 2).Set("c", 3)
 	left := base.Set("l", 4)
 	right := base.Set("r", 5)
 
-	sqltesting.AssertSQL(t, base.ToSql(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3;`)
-	sqltesting.AssertSQL(t, left.ToSql(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
-	sqltesting.AssertSQL(t, right.ToSql(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
+	sqltesting.AssertSQL(t, base.MustSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3;`)
+	sqltesting.AssertSQL(t, left.MustSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
+	sqltesting.AssertSQL(t, right.MustSQL(), `UPDATE "t" SET "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)
 }

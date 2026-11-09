@@ -1,14 +1,14 @@
 # Custom Dialect
 
-sqbl supports any SQL database by implementing the `SqlDialect` interface. This document walks through the interface contract and a complete implementation example.
+sqbl supports any SQL database by implementing the `Dialect` interface. This document walks through the interface contract and a complete implementation example.
 
 ---
 
-## The SqlDialect interface
+## The Dialect interface
 
 ```go
 // dialect/dialect.go
-type SqlDialect interface {
+type Dialect interface {
     Quote(buf *bytes.Buffer, s string)
     QuoteIdentifier(buf *bytes.Buffer, name string)
     PlaceholderPositional(buf *bytes.Buffer)
@@ -29,8 +29,9 @@ Each method has a narrow, well-defined contract:
 
 - `QuoteIdentifier(buf *bytes.Buffer, name string)`
   - Handles a dot-separated identifier such as `schema.table` or `db.schema.table`
-  - Must split on `.` and write each segment quoted with `Quote`
+  - Must split on `.` and write each segment quoted and escaped like `Quote`
   - Must write `.` between segments
+  - `dialect.QuoteIdentifierParts` does all of this for a given quote character
   - This ensures that `public.users` becomes `"public"."users"` rather than `"public.users"`
 
 - `PlaceholderPositional(buf *bytes.Buffer)`
@@ -52,49 +53,46 @@ Each method has a narrow, well-defined contract:
 ## Implementation example: DuckDB
 
 DuckDB follows the SQL standard and uses double-quote identifiers and `$N` placeholders, similar to PostgreSQL.
+The `dialect` package exports `WriteQuotedPart` and `QuoteIdentifierParts`, which quote and escape with a given quote character.
 
 ```go
 package sqblduckdb
 
 import (
-    "bytes"
-    "strconv"
-    "strings"
+	"bytes"
+	"strconv"
 
-    "github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-type DuckDBDialect struct{}
+// Dialect renders SQL for DuckDB.
+type Dialect struct{}
 
-var _ dialect.SqlDialect = &DuckDBDialect{}
+var _ dialect.Dialect = &Dialect{}
 
-func (d *DuckDBDialect) Quote(buf *bytes.Buffer, s string) {
-    dialect.WriteQuotedPart(buf, s, '"')
+func (d *Dialect) Quote(buf *bytes.Buffer, s string) {
+	dialect.WriteQuotedPart(buf, s, '"')
 }
 
-func (d *DuckDBDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
-    if strings.IndexByte(name, '.') < 0 {
-        d.Quote(buf, name)
-        return
-    }
-    dialect.QuoteIdentifierParts(buf, name, '"')
+func (d *Dialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
+	dialect.QuoteIdentifierParts(buf, name, '"')
 }
 
-func (d *DuckDBDialect) PlaceholderPositional(buf *bytes.Buffer) {
-    buf.WriteByte('?')
+func (d *Dialect) PlaceholderPositional(buf *bytes.Buffer) {
+	buf.WriteByte('?')
 }
 
-func (d *DuckDBDialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
-    buf.WriteByte('$')
-    buf.WriteString(strconv.Itoa(index))
+func (d *Dialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
+	buf.WriteByte('$')
+	buf.WriteString(strconv.Itoa(index))
 }
 
-func (d *DuckDBDialect) Bool(buf *bytes.Buffer, b bool) {
-    if b {
-        buf.WriteString("TRUE")
-    } else {
-        buf.WriteString("FALSE")
-    }
+func (d *Dialect) Bool(buf *bytes.Buffer, b bool) {
+	if b {
+		buf.WriteString("TRUE")
+	} else {
+		buf.WriteString("FALSE")
+	}
 }
 ```
 
@@ -103,135 +101,152 @@ func (d *DuckDBDialect) Bool(buf *bytes.Buffer, b bool) {
 ## Creating a convenience package
 
 Once you have a dialect, create a convenience package that wires it automatically, following the same pattern as `sqblpg` or `sqblmysql`.
+Builders are values: each method returns a modified copy, so the entry points return builder values, not pointers.
 
-A minimal package needs two files.
+A minimal package needs two files besides the dialect.
 
 ### sqblduckdb/sqblduckdb.go
 
 ```go
 package sqblduckdb
 
-import (
-    "github.com/kotofurumiya/sqbl/builder"
-    "github.com/kotofurumiya/sqbl/dialect"
-)
+import "github.com/kotofurumiya/sqbl/builder"
 
-func newSelectBuilder() *builder.SqlSelectBuilder {
-    b := &builder.SqlSelectBuilder{}
-    return b.Dialect(&DuckDBDialect{})
+func From(table any) builder.SelectBuilder {
+	var b builder.SelectBuilder
+	return b.Dialect(&Dialect{}).From(table)
 }
 
-func From(table any) *builder.SqlSelectBuilder {
-    return newSelectBuilder().From(table)
+func Select(columns ...any) builder.SelectBuilder {
+	var b builder.SelectBuilder
+	return b.Dialect(&Dialect{}).Select(columns...)
 }
 
-func Select(columns ...any) *builder.SqlSelectBuilder {
-    return newSelectBuilder().Select(columns...)
+func InsertInto(table string) builder.InsertBuilder {
+	var b builder.InsertBuilder
+	return b.Dialect(&Dialect{}).Into(table)
 }
 
-func InsertInto(table string) *builder.SqlInsertBuilder {
-    b := &builder.SqlInsertBuilder{}
-    return b.Dialect(&DuckDBDialect{}).Into(table)
+func Update(table string) builder.UpdateBuilder {
+	var b builder.UpdateBuilder
+	return b.Dialect(&Dialect{}).Table(table)
 }
 
-func Update(table string) *builder.SqlUpdateBuilder {
-    b := &builder.SqlUpdateBuilder{}
-    return b.Dialect(&DuckDBDialect{}).Table(table)
+func DeleteFrom(table string) builder.DeleteBuilder {
+	var b builder.DeleteBuilder
+	return b.Dialect(&Dialect{}).From(table)
 }
 
-func DeleteFrom(table string) *builder.SqlDeleteBuilder {
-    b := &builder.SqlDeleteBuilder{}
-    return b.Dialect(&DuckDBDialect{}).From(table)
+func CreateTable(table string) builder.CreateTableBuilder {
+	var b builder.CreateTableBuilder
+	return b.Dialect(&Dialect{}).Table(table)
 }
 
-func CreateTable(table string) *builder.SqlCreateTableBuilder {
-    b := &builder.SqlCreateTableBuilder{}
-    return b.Dialect(&DuckDBDialect{}).Table(table)
+func CreateIndex(name string) builder.CreateIndexBuilder {
+	var b builder.CreateIndexBuilder
+	return b.Dialect(&Dialect{}).Name(name)
 }
 
-func CreateIndex(name string) *builder.SqlCreateIndexBuilder {
-    b := &builder.SqlCreateIndexBuilder{}
-    return b.Dialect(&DuckDBDialect{}).Name(name)
+func DropTable(table string) builder.DropTableBuilder {
+	var b builder.DropTableBuilder
+	return b.Dialect(&Dialect{}).Table(table)
 }
 
-func DropTable(table string) *builder.SqlDropTableBuilder {
-    b := &builder.SqlDropTableBuilder{}
-    return b.Dialect(&DuckDBDialect{}).Table(table)
+func DropIndex(name string) builder.DropIndexBuilder {
+	var b builder.DropIndexBuilder
+	return b.Dialect(&Dialect{}).Name(name)
 }
 
-func DropIndex(name string) *builder.SqlDropIndexBuilder {
-    b := &builder.SqlDropIndexBuilder{}
-    return b.Dialect(&DuckDBDialect{}).Name(name)
-}
-
-func AlterTable(table string) *builder.SqlAlterTableBuilder {
-    b := &builder.SqlAlterTableBuilder{}
-    return b.Dialect(&DuckDBDialect{}).Table(table)
+func AlterTable(table string) builder.AlterTableBuilder {
+	var b builder.AlterTableBuilder
+	return b.Dialect(&Dialect{}).Table(table)
 }
 ```
 
 ### sqblduckdb/reexport.go
 
-Re-export the syntax helpers that apply to your database. Omit any function that your database does not support (e.g. omit `ILike` for databases that lack case-insensitive LIKE).
+Re-export the syntax helpers that apply to your database, so users need only one import. Omit any function that your database does not support.
+
+- Keep the parameter types of the `syntax` functions. For example, `Like` takes `pattern any`: a plain string there is an identifier, so a pattern is passed with `P` or `Raw`.
+- Re-export `Ident` and `Raw` as type aliases. Without `Raw`, users of the package cannot write SQL literals.
 
 ```go
 package sqblduckdb
 
 import "github.com/kotofurumiya/sqbl/syntax"
 
-func As(source any, alias string) syntax.Aliased               { return syntax.As(source, alias) }
-func Eq(left any, right any) syntax.ComparisonExpr             { return syntax.Eq(left, right) }
-func Ne(left any, right any) syntax.ComparisonExpr             { return syntax.Ne(left, right) }
-func Lt(left any, right any) syntax.ComparisonExpr             { return syntax.Lt(left, right) }
-func Lte(left any, right any) syntax.ComparisonExpr            { return syntax.Lte(left, right) }
-func Gt(left any, right any) syntax.ComparisonExpr             { return syntax.Gt(left, right) }
-func Gte(left any, right any) syntax.ComparisonExpr            { return syntax.Gte(left, right) }
-func And(exprs ...syntax.SqlFragment) syntax.LogicalExpr       { return syntax.And(exprs...) }
-func Or(exprs ...syntax.SqlFragment) syntax.LogicalExpr        { return syntax.Or(exprs...) }
-func Not(expr syntax.SqlFragment) syntax.NotExpr               { return syntax.Not(expr) }
-func In(left any, values ...any) syntax.InExpr                 { return syntax.In(left, values...) }
-func NotIn(left any, values ...any) syntax.InExpr              { return syntax.NotIn(left, values...) }
-func IsNull(col any) syntax.NullExpr                           { return syntax.IsNull(col) }
-func IsNotNull(col any) syntax.NullExpr                        { return syntax.IsNotNull(col) }
-func Between(col any, low, high any) syntax.BetweenExpr        { return syntax.Between(col, low, high) }
-func Like(left any, pattern string) syntax.ComparisonExpr      { return syntax.Like(left, pattern) }
-func Asc(col string) syntax.Order                              { return syntax.Asc(col) }
-func Desc(col string) syntax.Order                             { return syntax.Desc(col) }
-func P(args ...any) syntax.Parameter                           { return syntax.P(args...) }
-func Fn(name string, args ...any) syntax.SqlFn                 { return syntax.Fn(name, args...) }
-func Over(expr any) syntax.WindowExpr                          { return syntax.Over(expr) }
+type Ident = syntax.Ident
+type Raw = syntax.Raw
+
+func As(source any, alias string) syntax.Aliased { return syntax.As(source, alias) }
+func AsColumns(source any, alias string, columns ...string) syntax.Aliased {
+	return syntax.AsColumns(source, alias, columns...)
+}
+func Eq(left any, right any) syntax.ComparisonExpr       { return syntax.Eq(left, right) }
+func Ne(left any, right any) syntax.ComparisonExpr       { return syntax.Ne(left, right) }
+func Lt(left any, right any) syntax.ComparisonExpr       { return syntax.Lt(left, right) }
+func Lte(left any, right any) syntax.ComparisonExpr      { return syntax.Lte(left, right) }
+func Gt(left any, right any) syntax.ComparisonExpr       { return syntax.Gt(left, right) }
+func Gte(left any, right any) syntax.ComparisonExpr      { return syntax.Gte(left, right) }
+func And(exprs ...syntax.SQLFragment) syntax.LogicalExpr { return syntax.And(exprs...) }
+func Or(exprs ...syntax.SQLFragment) syntax.LogicalExpr  { return syntax.Or(exprs...) }
+func Not(expr syntax.SQLFragment) syntax.NotExpr         { return syntax.Not(expr) }
+func In(left any, values ...any) syntax.InExpr           { return syntax.In(left, values...) }
+func NotIn(left any, values ...any) syntax.InExpr        { return syntax.NotIn(left, values...) }
+func IsNull(col any) syntax.NullExpr                     { return syntax.IsNull(col) }
+func IsNotNull(col any) syntax.NullExpr                  { return syntax.IsNotNull(col) }
+func Between(col any, low, high any) syntax.BetweenExpr  { return syntax.Between(col, low, high) }
+func Like(left any, pattern any) syntax.ComparisonExpr   { return syntax.Like(left, pattern) }
+func ILike(left any, pattern any) syntax.ComparisonExpr  { return syntax.ILike(left, pattern) }
+func Asc(expr any) syntax.Order                          { return syntax.Asc(expr) }
+func Desc(expr any) syntax.Order                         { return syntax.Desc(expr) }
+func P(args ...any) syntax.Parameter                     { return syntax.P(args...) }
+func Fn(name string, args ...any) syntax.FnExpr          { return syntax.Fn(name, args...) }
+func Cast(expr any, typ string) syntax.CastExpr          { return syntax.Cast(expr, typ) }
+func Over(expr any) syntax.WindowExpr                    { return syntax.Over(expr) }
+```
+
+Usage:
+
+```go
+// SELECT "id", "we""ird" FROM "public"."users" WHERE "active" = TRUE AND "name" ILIKE $1;
+sqblduckdb.From("public.users").
+	Select("id", "we\"ird").
+	Where(sqblduckdb.And(sqblduckdb.Eq("active", true), sqblduckdb.ILike("name", sqblduckdb.P(1)))).
+	MustSQL()
 ```
 
 ---
 
 ## Using a custom dialect without a convenience package
 
-If you prefer not to create a separate package, you can set the dialect directly on the builder using `builder.SqlSelectBuilder.Dialect`:
+If you prefer not to create a separate package, set the dialect directly on a builder with its `Dialect` method:
 
 ```go
 import (
-    "github.com/kotofurumiya/sqbl/builder"
-    "github.com/kotofurumiya/sqbl/syntax"
+	"github.com/kotofurumiya/sqbl/builder"
+	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-b := (&builder.SqlSelectBuilder{}).
-    Dialect(&DuckDBDialect{}).
-    From("users").
-    Select("id", "name").
-    Where(syntax.Eq("active", true))
-
-sql := b.ToSql()
+var b builder.SelectBuilder
+sql, err := b.Dialect(&sqblduckdb.Dialect{}).
+	From("users").
+	Select("id", "name").
+	Where(syntax.Eq("active", true)).
+	ToSQL()
+// SELECT "id", "name" FROM "users" WHERE "active" = TRUE;
 ```
 
 ---
 
 ## What the dialect does NOT control
 
-The dialect is intentionally limited to lexical differences. The following are always handled by `builder.SqlSelectBuilder` regardless of dialect:
+The dialect is intentionally limited to lexical differences. The following are always handled by the builders regardless of dialect:
 
 - The order of SQL clauses (WITH → SELECT → FROM → JOIN → WHERE → ...)
 - Keywords: `SELECT`, `FROM`, `WHERE`, `JOIN ON`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`, `UNION`, `INTERSECT`, `EXCEPT`, `FOR UPDATE`, etc.
-- Parenthesization of subqueries
-- The trailing semicolon added by `ToSql()`
+- Parenthesization of subqueries and set-operation operands
+- Rendering errors for input with no safe SQL form, such as an unsupported value type
+- The trailing semicolon added by `ToSQL()`
 
-If you need to generate SQL that differs structurally from what `SqlSelectBuilder` produces, that is beyond the scope of the dialect interface and would require changes to `builder`.
+If you need to generate SQL that differs structurally from what the builders produce, that is beyond the scope of the dialect interface and would require changes to `builder`.

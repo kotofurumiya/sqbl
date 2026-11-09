@@ -1,5 +1,5 @@
 // Package sqlbuf provides a pooled bytes.Buffer for renderSQL methods.
-// Using a pool avoids re-allocating the buffer on every ToSql call.
+// Using a pool avoids re-allocating the buffer on every ToSQL call.
 //
 // bytes.Buffer.Reset() retains the underlying []byte (unlike strings.Builder.Reset()
 // which sets buf to nil), so pool reuse actually eliminates the Grow allocation

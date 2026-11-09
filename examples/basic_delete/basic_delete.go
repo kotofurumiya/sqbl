@@ -10,7 +10,7 @@ func main() {
 	// DELETE FROM "users" WHERE "id" = $1;
 	sql1 := sqbl.DeleteFrom("users").
 		Where(sqbl.Eq("id", sqbl.P(1))).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql1)
 
 	// Delete with a compound condition
@@ -20,7 +20,7 @@ func main() {
 			sqbl.Eq("user_id", sqbl.P(1)),
 			sqbl.Lt("expires_at", sqbl.P(2)),
 		)).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql2)
 
 	// DELETE ... RETURNING to get the deleted row
@@ -28,6 +28,6 @@ func main() {
 	sql3 := sqbl.DeleteFrom("users").
 		Where(sqbl.Eq("id", sqbl.P(1))).
 		Returning("id", "email").
-		ToSql()
+		MustSQL()
 	fmt.Println(sql3)
 }

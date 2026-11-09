@@ -2,58 +2,47 @@ package builder
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
-	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// SqlCreateIndexBuilder builds a CREATE INDEX statement.
-type SqlCreateIndexBuilder struct {
-	dialect     dialect.SqlDialect
+// CreateIndexBuilder builds a CREATE INDEX statement.
+// Use a dialect-specific constructor (e.g. sqblpg.CreateIndex) to create an instance.
+//
+//	sqblpg.CreateIndex("idx_users_email").On("users").Columns("email").Unique()
+//	// CREATE UNIQUE INDEX "idx_users_email" ON "users" ("email")
+type CreateIndexBuilder struct {
+	dialect     dialect.Dialect
 	unique      bool
 	ifNotExists bool
 	name        string
 	table       string
-	columns     []string           // column names, quoted as identifiers
-	using       string             // index method, e.g. "btree", "hash", "gist" — verbatim, unquoted
-	where       syntax.SqlFragment // partial-index predicate
+	columns     []any                // key columns or expressions
+	using       string               // index method, e.g. "btree", "hash", "gist" — verbatim, unquoted
+	where       []syntax.SQLFragment // partial-index predicate, ANDed
 }
 
-var _ SqlBuilder = SqlCreateIndexBuilder{}
+var _ Statement = CreateIndexBuilder{}
 
-// renderSQL assembles the CREATE INDEX statement for the given dialect.
-//
-// The output follows this structure:
-//
-//	CREATE [UNIQUE] INDEX [IF NOT EXISTS] "name" ON "table" [USING method] ("col1", "col2") [WHERE expr]
-//
-// All column names are quoted via the dialect. The USING method and WHERE
-// predicate are passed through verbatim, so callers are responsible for
-// their correctness.
+// ToSQL renders the statement with the builder's dialect and a trailing semicolon.
+func (b CreateIndexBuilder) ToSQL() (string, error) { return render(b, b.dialect, true) }
 
-// ToSql renders the CREATE INDEX statement with a trailing semicolon.
-func (b SqlCreateIndexBuilder) ToSql() string {
-	d := requireDialect(b.dialect)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	buf.WriteByte(';')
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// ToSQLWithDialect renders the statement with d and no trailing semicolon.
+func (b CreateIndexBuilder) ToSQLWithDialect(d dialect.Dialect) (string, error) {
+	return render(b, d, false)
 }
 
-// ToSqlWithDialect renders the CREATE INDEX statement without a trailing semicolon.
-func (b SqlCreateIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	requireDialect(d)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// MustSQL is like ToSQL but panics on error.
+func (b CreateIndexBuilder) MustSQL() string { return must(b.ToSQL()) }
+
+// MustSQLWithDialect is like ToSQLWithDialect but panics on error.
+func (b CreateIndexBuilder) MustSQLWithDialect(d dialect.Dialect) string {
+	return must(b.ToSQLWithDialect(d))
 }
 
-func (b SqlCreateIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b CreateIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// CREATE [UNIQUE] INDEX [IF NOT EXISTS] "name"
 	buf.WriteString("CREATE ")
 	if b.unique {
@@ -77,76 +66,70 @@ func (b SqlCreateIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect
 
 	// Column list: ("col1", "col2") — each name quoted by the dialect.
 	buf.WriteString(" (")
-	for i, col := range b.columns {
-		if i > 0 {
-			buf.WriteString(", ")
-		}
-		d.QuoteIdentifier(buf, col)
-	}
+	writeValues(buf, d, b.columns)
 	buf.WriteByte(')')
 
 	// WHERE predicate for partial indexes — omitted when not set.
-	if b.where != nil {
-		buf.WriteString(" WHERE ")
-		b.where.AppendSQL(buf, d)
-	}
+	writeConditions(buf, d, " WHERE ", b.where)
 }
 
 // Dialect sets the SQL dialect.
-func (b SqlCreateIndexBuilder) Dialect(d dialect.SqlDialect) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Dialect(d dialect.Dialect) CreateIndexBuilder {
 	b.dialect = d
 	return b
 }
 
 // Name sets the index name.
-func (b SqlCreateIndexBuilder) Name(name string) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Name(name string) CreateIndexBuilder {
 	b.name = name
 	return b
 }
 
 // Unique marks the index as UNIQUE.
-func (b SqlCreateIndexBuilder) Unique() SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) Unique() CreateIndexBuilder {
 	b.unique = true
 	return b
 }
 
 // IfNotExists adds IF NOT EXISTS to the CREATE INDEX statement.
-func (b SqlCreateIndexBuilder) IfNotExists() SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) IfNotExists() CreateIndexBuilder {
 	b.ifNotExists = true
 	return b
 }
 
 // On sets the target table for the index.
-func (b SqlCreateIndexBuilder) On(table string) SqlCreateIndexBuilder {
+func (b CreateIndexBuilder) On(table string) CreateIndexBuilder {
 	b.table = table
 	return b
 }
 
-// Columns appends one or more column names to the index column list.
-// Each name is quoted as an identifier by the dialect at render time.
+// Columns sets the index key columns, replacing any earlier list.
+// Each item follows the rules of syntax.AppendValue: a plain string is a quoted
+// column, and an expression or a direction can be given with Raw or Desc.
 //
-//	.Columns("email")          →  ("email")
-//	.Columns("last", "first")  →  ("last", "first")
-func (b SqlCreateIndexBuilder) Columns(cols ...string) SqlCreateIndexBuilder {
-	b.columns = append(append([]string(nil), b.columns...), cols...)
+//	.Columns("last", "first")                   →  ("last", "first")
+//	.Columns(sqblpg.Desc("created_at"))         →  ("created_at" DESC)
+//	.Columns(sqblpg.Raw(`(lower("email"))`))   →  ((lower("email")))
+func (b CreateIndexBuilder) Columns(cols ...any) CreateIndexBuilder {
+	b.columns = slices.Clone(cols)
 	return b
 }
 
-// Using sets the index access method (e.g. "btree", "hash", "gist", "gin").
-// The value is written verbatim after USING without quoting.
+// Using sets the index access method (e.g. "btree", "hash", "gist", "gin"), replacing any earlier one.
+// The value is written verbatim after the table name, which is PostgreSQL's placement;
+// MySQL expects USING elsewhere. Never build it from untrusted input.
 //
-//	.Using("hash")  →  USING hash
-func (b SqlCreateIndexBuilder) Using(method string) SqlCreateIndexBuilder {
+//	.Using("hash")  →  ON "users" USING hash ("email")
+func (b CreateIndexBuilder) Using(method string) CreateIndexBuilder {
 	b.using = method
 	return b
 }
 
-// Where sets a partial-index predicate.
-// expr is a dialect-aware Expression, rendered the same way as a WHERE condition.
+// Where adds a predicate that makes the index partial. Supported by PostgreSQL and SQLite.
+// Calling it again ANDs the new predicate with the earlier ones; nil is ignored.
 //
-//	.Where(syntax.Eq("active", true))  →  WHERE "active" = TRUE
-//	.Where(syntax.IsNull("deleted_at"))  →  WHERE "deleted_at" IS NULL
-func (b SqlCreateIndexBuilder) Where(expr syntax.SqlFragment) SqlCreateIndexBuilder {
-	b.where = expr
+//	.Where(sqblpg.IsNull("deleted_at"))  →  WHERE "deleted_at" IS NULL
+func (b CreateIndexBuilder) Where(expr syntax.SQLFragment) CreateIndexBuilder {
+	b.where = addCondition(b.where, expr)
 	return b
 }

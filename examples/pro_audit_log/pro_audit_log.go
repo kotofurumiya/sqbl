@@ -18,17 +18,16 @@ func main() {
 	// INSERT INTO "users" ("email", "name", "updated_at")
 	// VALUES ($1, $2, NOW())
 	// ON CONFLICT ("email") DO UPDATE SET
-	//   "name" = EXCLUDED."name", "updated_at" = NOW()
+	//   "name" = "excluded"."name", "updated_at" = NOW()
 	// RETURNING "id", "email";
 	upsertUser := sqbl.InsertInto("users").
 		Columns("email", "name", "updated_at").
 		Values(sqbl.P(1), sqbl.P(2), sqbl.Fn("NOW")).
-		OnConflict("email").DoUpdate(
-		`"name" = EXCLUDED."name"`,
-		`"updated_at" = NOW()`,
-	).
+		OnConflict("email").
+		DoUpdateSet("name", "excluded.name").
+		DoUpdateSet("updated_at", sqbl.Fn("NOW")).
 		Returning("id", "email").
-		ToSql()
+		MustSQL()
 	fmt.Println(upsertUser)
 
 	// Step 2: Write an audit log entry for the change.
@@ -41,7 +40,7 @@ func main() {
 		Columns("user_id", "action", "payload", "created_at").
 		Values(sqbl.P(1), sqbl.P(2), sqbl.P(3), sqbl.Fn("NOW")).
 		Returning("id").
-		ToSql()
+		MustSQL()
 	fmt.Println(writeAuditLog)
 
 	// Step 3: Fetch the full audit trail for a user, newest first.
@@ -56,6 +55,6 @@ func main() {
 		Where(sqbl.Eq("user_id", sqbl.P(1))).
 		OrderBy(sqbl.Desc("created_at")).
 		Limit(50).
-		ToSql()
+		MustSQL()
 	fmt.Println(auditTrail)
 }

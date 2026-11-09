@@ -23,7 +23,7 @@ func main() {
 		Select("au.id", "au.name", sqbl.As(sqbl.Fn("COUNT", "o.id"), "order_count")).
 		LeftJoin(sqbl.As("orders", "o"), sqbl.Eq("au.id", "o.user_id")).
 		GroupBy("au.id", "au.name").
-		ToSql()
+		MustSQL()
 	fmt.Println(sql1)
 
 	// Multiple CTEs chained together
@@ -50,7 +50,7 @@ func main() {
 		With("top_sellers", topSellers).
 		Select("u.id", "u.name").
 		InnerJoin(sqbl.As("top_sellers", "ts"), sqbl.Eq("u.id", "ts.user_id")).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql2)
 
 	// Recursive CTE: walk an org chart from the root down
@@ -71,6 +71,6 @@ func main() {
 	sql3 := sqbl.From("org").
 		WithRecursive("org", base.UnionAll(recursive)).
 		Select("id", "name", "manager_id").
-		ToSql()
+		MustSQL()
 	fmt.Println(sql3)
 }

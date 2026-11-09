@@ -4,45 +4,39 @@ import (
 	"bytes"
 
 	"github.com/kotofurumiya/sqbl/dialect"
-	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 )
 
-// SqlDropIndexBuilder constructs a DROP INDEX statement using a fluent method chain.
+// DropIndexBuilder constructs a DROP INDEX statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.DropIndex) to create an instance.
 //
 //	sqblpg.DropIndex("idx_users_email").IfExists()
 //	sqblmysql.DropIndex("idx_users_email").On("users")
-type SqlDropIndexBuilder struct {
-	dialect  dialect.SqlDialect
+type DropIndexBuilder struct {
+	dialect  dialect.Dialect
 	name     string
 	ifExists bool
 	on       string // required for MySQL: DROP INDEX name ON table
 }
 
-var _ SqlBuilder = SqlDropIndexBuilder{}
+var _ Statement = DropIndexBuilder{}
 
-// ToSql renders the DROP INDEX statement with a trailing semicolon.
-func (b SqlDropIndexBuilder) ToSql() string {
-	d := requireDialect(b.dialect)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	buf.WriteByte(';')
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// ToSQL renders the statement with the builder's dialect and a trailing semicolon.
+func (b DropIndexBuilder) ToSQL() (string, error) { return render(b, b.dialect, true) }
+
+// ToSQLWithDialect renders the statement with d and no trailing semicolon.
+func (b DropIndexBuilder) ToSQLWithDialect(d dialect.Dialect) (string, error) {
+	return render(b, d, false)
 }
 
-// ToSqlWithDialect renders the DROP INDEX statement using the given dialect, without a trailing semicolon.
-func (b SqlDropIndexBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	requireDialect(d)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// MustSQL is like ToSQL but panics on error.
+func (b DropIndexBuilder) MustSQL() string { return must(b.ToSQL()) }
+
+// MustSQLWithDialect is like ToSQLWithDialect but panics on error.
+func (b DropIndexBuilder) MustSQLWithDialect(d dialect.Dialect) string {
+	return must(b.ToSQLWithDialect(d))
 }
 
-func (b SqlDropIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b DropIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	buf.WriteString("DROP INDEX")
 	if b.ifExists {
 		buf.WriteString(" IF EXISTS")
@@ -58,13 +52,13 @@ func (b SqlDropIndexBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) 
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlDropIndexBuilder) Dialect(d dialect.SqlDialect) SqlDropIndexBuilder {
+func (b DropIndexBuilder) Dialect(d dialect.Dialect) DropIndexBuilder {
 	b.dialect = d
 	return b
 }
 
 // Name sets the index name.
-func (b SqlDropIndexBuilder) Name(name string) SqlDropIndexBuilder {
+func (b DropIndexBuilder) Name(name string) DropIndexBuilder {
 	b.name = name
 	return b
 }
@@ -75,7 +69,7 @@ func (b SqlDropIndexBuilder) Name(name string) SqlDropIndexBuilder {
 //
 //	sqblpg.DropIndex("idx_users_email").IfExists()
 //	// DROP INDEX IF EXISTS "idx_users_email"
-func (b SqlDropIndexBuilder) IfExists() SqlDropIndexBuilder {
+func (b DropIndexBuilder) IfExists() DropIndexBuilder {
 	b.ifExists = true
 	return b
 }
@@ -85,7 +79,7 @@ func (b SqlDropIndexBuilder) IfExists() SqlDropIndexBuilder {
 //
 //	sqblmysql.DropIndex("idx_users_email").On("users")
 //	// DROP INDEX `idx_users_email` ON `users`
-func (b SqlDropIndexBuilder) On(table string) SqlDropIndexBuilder {
+func (b DropIndexBuilder) On(table string) DropIndexBuilder {
 	b.on = table
 	return b
 }

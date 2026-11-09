@@ -5,47 +5,41 @@ import (
 	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
-	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-// SqlDeleteBuilder constructs a SQL DELETE statement using a fluent method chain.
+// DeleteBuilder constructs a SQL DELETE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.DeleteFrom) to create an instance.
 //
 //	q := sqblpg.DeleteFrom("users").
-//	    Where(sqblpg.Eq("id", sqbl.P(1)))
-//	sql := q.ToSql()
-type SqlDeleteBuilder struct {
-	dialect   dialect.SqlDialect
+//	    Where(sqblpg.Eq("id", sqblpg.P(1)))
+//	sql, err := q.ToSQL()
+type DeleteBuilder struct {
+	dialect   dialect.Dialect
 	from      string
-	where     syntax.SqlFragment
-	returning []string
+	where     []syntax.SQLFragment // ANDed
+	returning []any
 }
 
-var _ SqlBuilder = SqlDeleteBuilder{}
+var _ Statement = DeleteBuilder{}
 
-// ToSql renders the DELETE statement with a trailing semicolon.
-func (b SqlDeleteBuilder) ToSql() string {
-	d := requireDialect(b.dialect)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	buf.WriteByte(';')
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// ToSQL renders the statement with the builder's dialect and a trailing semicolon.
+func (b DeleteBuilder) ToSQL() (string, error) { return render(b, b.dialect, true) }
+
+// ToSQLWithDialect renders the statement with d and no trailing semicolon.
+func (b DeleteBuilder) ToSQLWithDialect(d dialect.Dialect) (string, error) {
+	return render(b, d, false)
 }
 
-// ToSqlWithDialect renders the DELETE statement using the given dialect, without a trailing semicolon.
-func (b SqlDeleteBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	requireDialect(d)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// MustSQL is like ToSQL but panics on error.
+func (b DeleteBuilder) MustSQL() string { return must(b.ToSQL()) }
+
+// MustSQLWithDialect is like ToSQLWithDialect but panics on error.
+func (b DeleteBuilder) MustSQLWithDialect(d dialect.Dialect) string {
+	return must(b.ToSQLWithDialect(d))
 }
 
-func (b SqlDeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b DeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// DELETE FROM table
 	buf.WriteString("DELETE FROM")
 	if b.from != "" {
@@ -53,26 +47,16 @@ func (b SqlDeleteBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 		d.QuoteIdentifier(buf, b.from)
 	}
 
-	// WHERE condition
-	if b.where != nil {
-		buf.WriteString(" WHERE ")
-		b.where.AppendSQL(buf, d)
-	}
+	writeConditions(buf, d, " WHERE ", b.where)
 
-	// RETURNING col1, col2, ...
 	if len(b.returning) > 0 {
 		buf.WriteString(" RETURNING ")
-		for i, col := range b.returning {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			d.QuoteIdentifier(buf, col)
-		}
+		writeValues(buf, d, b.returning)
 	}
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlDeleteBuilder) Dialect(d dialect.SqlDialect) SqlDeleteBuilder {
+func (b DeleteBuilder) Dialect(d dialect.Dialect) DeleteBuilder {
 	b.dialect = d
 	return b
 }
@@ -80,24 +64,27 @@ func (b SqlDeleteBuilder) Dialect(d dialect.SqlDialect) SqlDeleteBuilder {
 // From sets the target table for the DELETE statement.
 //
 //	b.From("users")
-func (b SqlDeleteBuilder) From(table string) SqlDeleteBuilder {
+func (b DeleteBuilder) From(table string) DeleteBuilder {
 	b.from = table
 	return b
 }
 
-// Where sets the WHERE condition.
+// Where adds a WHERE condition.
+// Calling Where again ANDs the new condition with the earlier ones; nil is ignored.
+// Without any condition, every row is deleted.
 //
-//	b.Where(sqblpg.Eq("id", sqbl.P(1)))
-func (b SqlDeleteBuilder) Where(expr syntax.SqlFragment) SqlDeleteBuilder {
-	b.where = expr
+//	b.Where(sqblpg.Eq("id", sqblpg.P(1)))
+func (b DeleteBuilder) Where(expr syntax.SQLFragment) DeleteBuilder {
+	b.where = addCondition(b.where, expr)
 	return b
 }
 
-// Returning adds a RETURNING clause to the DELETE statement.
-// The specified columns are returned for each deleted row.
+// Returning sets the RETURNING list, replacing any earlier list.
+// Each item follows the rules of syntax.AppendValue, so "*" returns every column.
+// Supported by PostgreSQL, SQLite 3.35+, and MariaDB 10.5+.
 //
-//	sqblpg.DeleteFrom("sessions").Where(...).Returning("id", "user_id")
-func (b SqlDeleteBuilder) Returning(cols ...string) SqlDeleteBuilder {
+//	sqblpg.DeleteFrom("sessions").Where(sqblpg.Lt("expires_at", sqblpg.P(1))).Returning("id", "user_id")
+func (b DeleteBuilder) Returning(cols ...any) DeleteBuilder {
 	b.returning = slices.Clone(cols)
 	return b
 }

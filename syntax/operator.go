@@ -5,89 +5,141 @@ import (
 	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
+	"github.com/kotofurumiya/sqbl/internal/sqlerr"
 )
 
-var _ SqlFragment = ComparisonExpr{}
-var _ SqlFragment = LogicalExpr{}
+var _ SQLFragment = ComparisonExpr{}
+var _ SQLFragment = LogicalExpr{}
 
-// ComparisonExpr represents a binary comparison such as col = value.
-// Left and Right accept the same values as AppendValue; a plain string is an identifier.
-type ComparisonExpr struct {
-	Left     any
-	Operator string
-	Right    any
+// appendOperand writes an operand of a comparison, IN, BETWEEN or IS NULL.
+// And, Or and Not bind looser than those operators, so they are parenthesized
+// to keep their meaning.
+func appendOperand(buf *bytes.Buffer, d dialect.Dialect, v any) {
+	switch v.(type) {
+	case LogicalExpr, NotExpr:
+		buf.WriteByte('(')
+		AppendValue(buf, d, v)
+		buf.WriteByte(')')
+	default:
+		AppendValue(buf, d, v)
+	}
 }
 
-// AppendSQL implements SqlFragment, writing the comparison into buf.
-func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	AppendValue(buf, d, e.Left)
+// ComparisonExpr represents a binary comparison such as col = value.
+// Create one with Eq, Ne, Lt, Lte, Gt, Gte, Like or ILike.
+type ComparisonExpr struct {
+	left  any
+	op    string
+	right any
+}
+
+// AppendSQL implements SQLFragment, writing the comparison into buf.
+// A nil operand fails: comparing with NULL never matches.
+func (e ComparisonExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
+	if e.left == nil || e.right == nil {
+		sqlerr.Fail("%s with nil never matches, because NULL is not equal to anything; "+
+			"use IsNull or IsNotNull", e.op)
+	}
+	appendOperand(buf, d, e.left)
 	buf.WriteByte(' ')
-	buf.WriteString(e.Operator)
+	buf.WriteString(e.op)
 	buf.WriteByte(' ')
-	AppendValue(buf, d, e.Right)
+	appendOperand(buf, d, e.right)
 }
 
 // Eq returns an equality (=) comparison expression.
-// A plain string on either side is an identifier, so compare against a value
-// with P, or with Raw for a literal written into the SQL.
+// Both operands accept the same values as AppendValue. A plain string on either
+// side is an identifier, so compare against a value with P, or with Raw for a
+// literal written into the SQL. A nil operand fails; use IsNull instead.
 //
 //	syntax.Eq("status", syntax.P(1))        // "status" = $1
 //	syntax.Eq("u.id", "o.user_id")          // "u"."id" = "o"."user_id"
 //	syntax.Eq("status", syntax.Raw("'ok'")) // "status" = 'ok'
 //	syntax.Eq(syntax.Fn("SUM", "x"), 100)   // SUM("x") = 100
 func Eq(left any, right any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: "=", Right: right}
+	return ComparisonExpr{left: left, op: "=", right: right}
 }
 
 // Ne returns an inequality (<>) comparison expression.
 //
-//	syntax.Ne("status", syntax.P(1))  // "status" <> $1
+//	syntax.Ne("status", syntax.P(1)) // "status" <> $1
 func Ne(left any, right any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: "<>", Right: right}
+	return ComparisonExpr{left: left, op: "<>", right: right}
 }
 
 // Lt returns a less-than (<) comparison expression.
 //
-//	syntax.Lt("age", 18)  // "age" < 18
+//	syntax.Lt("age", 18) // "age" < 18
 func Lt(left any, right any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: "<", Right: right}
+	return ComparisonExpr{left: left, op: "<", right: right}
 }
 
 // Lte returns a less-than-or-equal (<=) comparison expression.
 //
-//	syntax.Lte("age", 18)  // "age" <= 18
+//	syntax.Lte("age", 18) // "age" <= 18
 func Lte(left any, right any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: "<=", Right: right}
+	return ComparisonExpr{left: left, op: "<=", right: right}
 }
 
 // Gt returns a greater-than (>) comparison expression.
 //
-//	syntax.Gt("score", 100)              // "score" > 100
+//	syntax.Gt("score", 100)             // "score" > 100
 //	syntax.Gt(syntax.Fn("SUM", "x"), 0) // SUM("x") > 0
 func Gt(left any, right any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: ">", Right: right}
+	return ComparisonExpr{left: left, op: ">", right: right}
 }
 
 // Gte returns a greater-than-or-equal (>=) comparison expression.
 //
-//	syntax.Gte("score", 100)  // "score" >= 100
+//	syntax.Gte("score", 100) // "score" >= 100
 func Gte(left any, right any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: ">=", Right: right}
+	return ComparisonExpr{left: left, op: ">=", right: right}
 }
 
-// LogicalExpr combines multiple SQL fragments with a logical operator (AND/OR).
+// Like returns a LIKE comparison expression.
+// The pattern accepts the same values as Eq; pass it with P, or with Raw for a
+// literal written into the SQL.
+//
+//	syntax.Like("name", syntax.P(1))
+//	// "name" LIKE $1
+//
+//	syntax.Like(syntax.Fn("LOWER", "name"), syntax.Raw("'%foo%'"))
+//	// LOWER("name") LIKE '%foo%'
+func Like(left any, pattern any) ComparisonExpr {
+	return ComparisonExpr{left: left, op: "LIKE", right: pattern}
+}
+
+// ILike returns an ILIKE comparison expression (case-insensitive LIKE, PostgreSQL-specific).
+// The pattern accepts the same values as Eq.
+//
+//	syntax.ILike("name", syntax.P(1))
+//	// "name" ILIKE $1
+func ILike(left any, pattern any) ComparisonExpr {
+	return ComparisonExpr{left: left, op: "ILIKE", right: pattern}
+}
+
+// LogicalExpr combines conditions with AND or OR.
+// Create one with And or Or.
 type LogicalExpr struct {
-	Operator    string
-	Expressions []SqlFragment
+	op    string
+	exprs []SQLFragment
+	empty bool // the identity value rendered when exprs is empty
 }
 
-// AppendSQL implements SqlFragment, writing all sub-expressions joined by the logical operator into buf.
-// Nested LogicalExpr are wrapped in parentheses to preserve evaluation order.
-func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	for i, exp := range e.Expressions {
+// AppendSQL implements SQLFragment, writing the conditions joined by the operator into buf.
+// Nested And and Or are parenthesized to keep their meaning.
+func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
+	if len(e.exprs) == 0 {
+		d.Bool(buf, e.empty)
+		return
+	}
+	for i, exp := range e.exprs {
+		if exp == nil {
+			sqlerr.Fail("%s operand %d is nil", e.op, i+1)
+		}
 		if i > 0 {
 			buf.WriteByte(' ')
-			buf.WriteString(e.Operator)
+			buf.WriteString(e.op)
 			buf.WriteByte(' ')
 		}
 		if _, ok := exp.(LogicalExpr); ok {
@@ -100,70 +152,81 @@ func (e LogicalExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	}
 }
 
-// And combines multiple expressions with AND.
+// And combines conditions with AND.
+// With no conditions it renders TRUE, so a filter list built at run time can be empty.
 //
 //	syntax.And(syntax.Eq("active", true), syntax.Gt("age", 18))
 //	// "active" = TRUE AND "age" > 18
-func And(exprs ...SqlFragment) LogicalExpr {
-	return LogicalExpr{Operator: "AND", Expressions: slices.Clone(exprs)}
+func And(exprs ...SQLFragment) LogicalExpr {
+	return LogicalExpr{op: "AND", exprs: slices.Clone(exprs), empty: true}
 }
 
-// Or combines multiple expressions with OR.
+// Or combines conditions with OR.
+// With no conditions it renders FALSE, so a filter list built at run time can be empty.
 //
 //	syntax.Or(syntax.Eq("role", syntax.P(1)), syntax.Eq("role", syntax.P(2)))
 //	// "role" = $1 OR "role" = $2
-func Or(exprs ...SqlFragment) LogicalExpr {
-	return LogicalExpr{Operator: "OR", Expressions: slices.Clone(exprs)}
+func Or(exprs ...SQLFragment) LogicalExpr {
+	return LogicalExpr{op: "OR", exprs: slices.Clone(exprs), empty: false}
 }
 
 // NotExpr represents a NOT (...) expression.
+// Create one with Not.
 type NotExpr struct {
-	Expr SqlFragment
+	expr SQLFragment
 }
 
-var _ SqlFragment = NotExpr{}
+var _ SQLFragment = NotExpr{}
 
-// AppendSQL implements SqlFragment, writing NOT (...) into buf.
-func (e NotExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements SQLFragment, writing NOT (...) into buf.
+func (e NotExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
+	if e.expr == nil {
+		sqlerr.Fail("Not has a nil condition")
+	}
 	buf.WriteString("NOT (")
-	e.Expr.AppendSQL(buf, d)
+	e.expr.AppendSQL(buf, d)
 	buf.WriteByte(')')
 }
 
-// Not wraps an expression with NOT.
+// Not negates a condition.
 //
 //	syntax.Not(syntax.Eq("active", false))
 //	// NOT ("active" = FALSE)
-func Not(expr SqlFragment) NotExpr {
-	return NotExpr{Expr: expr}
+func Not(expr SQLFragment) NotExpr {
+	return NotExpr{expr: expr}
 }
 
 // InExpr represents an IN or NOT IN expression.
-// Left and each value accept the same values as AppendValue.
+// Create one with In or NotIn.
 type InExpr struct {
-	Left   any
-	Negate bool
-	Values []any
+	left   any
+	negate bool
+	values []any
 }
 
-var _ SqlFragment = InExpr{}
+var _ SQLFragment = InExpr{}
 
-// AppendSQL implements SqlFragment, writing the IN or NOT IN expression into buf.
-func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	AppendValue(buf, d, e.Left)
-	if e.Negate {
+// AppendSQL implements SQLFragment, writing the IN or NOT IN expression into buf.
+func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
+	if len(e.values) == 0 {
+		// x IN () is a syntax error; an empty list matches nothing, so NOT IN matches everything.
+		d.Bool(buf, e.negate)
+		return
+	}
+	appendOperand(buf, d, e.left)
+	if e.negate {
 		buf.WriteString(" NOT IN ")
 	} else {
 		buf.WriteString(" IN ")
 	}
-	if len(e.Values) == 1 {
-		if sub, ok := e.Values[0].(Subquery); ok {
+	if len(e.values) == 1 {
+		if sub, ok := e.values[0].(Subquery); ok {
 			sub.AppendSQL(buf, d)
 			return
 		}
 	}
 	buf.WriteByte('(')
-	for i, v := range e.Values {
+	for i, v := range e.values {
 		if i > 0 {
 			buf.WriteString(", ")
 		}
@@ -172,7 +235,9 @@ func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	buf.WriteByte(')')
 }
 
-// In returns an IN expression.
+// In returns an IN expression. Each value accepts the same values as AppendValue.
+// A lone subquery is used as the list itself. With no values it renders FALSE,
+// so a list built at run time can be empty.
 //
 //	syntax.In("status", syntax.P(1), syntax.P(2))
 //	// "status" IN ($1, $2)
@@ -180,29 +245,30 @@ func (e InExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 //	syntax.In("id", subquery)
 //	// "id" IN (SELECT ...)
 func In(left any, values ...any) InExpr {
-	return InExpr{Left: left, Negate: false, Values: slices.Clone(values)}
+	return InExpr{left: left, negate: false, values: slices.Clone(values)}
 }
 
-// NotIn returns a NOT IN expression.
+// NotIn returns a NOT IN expression. With no values it renders TRUE.
 //
 //	syntax.NotIn("status", syntax.Raw("'deleted'"), syntax.Raw("'banned'"))
 //	// "status" NOT IN ('deleted', 'banned')
 func NotIn(left any, values ...any) InExpr {
-	return InExpr{Left: left, Negate: true, Values: slices.Clone(values)}
+	return InExpr{left: left, negate: true, values: slices.Clone(values)}
 }
 
 // NullExpr represents an IS NULL or IS NOT NULL expression.
+// Create one with IsNull or IsNotNull.
 type NullExpr struct {
-	Col    any // accepts the same values as AppendValue
-	Negate bool
+	col    any
+	negate bool
 }
 
-var _ SqlFragment = NullExpr{}
+var _ SQLFragment = NullExpr{}
 
-// AppendSQL implements SqlFragment, writing IS NULL or IS NOT NULL into buf.
-func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	AppendValue(buf, d, e.Col)
-	if e.Negate {
+// AppendSQL implements SQLFragment, writing IS NULL or IS NOT NULL into buf.
+func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
+	appendOperand(buf, d, e.col)
+	if e.negate {
 		buf.WriteString(" IS NOT NULL")
 	} else {
 		buf.WriteString(" IS NULL")
@@ -214,7 +280,7 @@ func (e NullExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 //	syntax.IsNull("deleted_at")
 //	// "deleted_at" IS NULL
 func IsNull(col any) NullExpr {
-	return NullExpr{Col: col, Negate: false}
+	return NullExpr{col: col, negate: false}
 }
 
 // IsNotNull returns an IS NOT NULL expression.
@@ -222,54 +288,33 @@ func IsNull(col any) NullExpr {
 //	syntax.IsNotNull("email")
 //	// "email" IS NOT NULL
 func IsNotNull(col any) NullExpr {
-	return NullExpr{Col: col, Negate: true}
+	return NullExpr{col: col, negate: true}
 }
 
 // BetweenExpr represents a BETWEEN ... AND ... expression.
-// Col and both bounds accept the same values as AppendValue.
+// Create one with Between.
 type BetweenExpr struct {
-	Col  any
-	Low  any
-	High any
+	col  any
+	low  any
+	high any
 }
 
-var _ SqlFragment = BetweenExpr{}
+var _ SQLFragment = BetweenExpr{}
 
-// AppendSQL implements SqlFragment, writing the BETWEEN expression into buf.
-func (e BetweenExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
-	AppendValue(buf, d, e.Col)
+// AppendSQL implements SQLFragment, writing the BETWEEN expression into buf.
+func (e BetweenExpr) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
+	appendOperand(buf, d, e.col)
 	buf.WriteString(" BETWEEN ")
-	AppendValue(buf, d, e.Low)
+	appendOperand(buf, d, e.low)
 	buf.WriteString(" AND ")
-	AppendValue(buf, d, e.High)
+	appendOperand(buf, d, e.high)
 }
 
 // Between returns a BETWEEN ... AND ... expression.
+// The column and both bounds accept the same values as AppendValue.
 //
 //	syntax.Between("age", 18, 65)
 //	// "age" BETWEEN 18 AND 65
 func Between(col any, low, high any) BetweenExpr {
-	return BetweenExpr{Col: col, Low: low, High: high}
-}
-
-// Like returns a LIKE comparison expression.
-// The pattern accepts the same values as AppendValue; pass it with P, or with Raw
-// for a literal written into the SQL.
-//
-//	syntax.Like("name", syntax.P(1))
-//	// "name" LIKE $1
-//
-//	syntax.Like(syntax.Fn("LOWER", "name"), syntax.Raw("'%foo%'"))
-//	// LOWER("name") LIKE '%foo%'
-func Like(left any, pattern any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: "LIKE", Right: pattern}
-}
-
-// ILike returns an ILIKE comparison expression (case-insensitive LIKE, PostgreSQL-specific).
-// The pattern accepts the same values as Like.
-//
-//	syntax.ILike("name", syntax.P(1))
-//	// "name" ILIKE $1
-func ILike(left any, pattern any) ComparisonExpr {
-	return ComparisonExpr{Left: left, Operator: "ILIKE", Right: pattern}
+	return BetweenExpr{col: col, low: low, high: high}
 }

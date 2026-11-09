@@ -29,7 +29,7 @@ func runFiltering(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(16), syntax.P(17), syntax.P(18), syntax.P(19), syntax.P(20)).
 			Values(syntax.P(21), syntax.P(22), syntax.P(23), syntax.P(24), syntax.P(25)).
 			Values(syntax.P(26), syntax.P(27), syntax.P(28), syntax.P(29), syntax.P(30)).
-			ToSql(),
+			MustSQL(),
 		1, "Go Programming", "books", 3000, "A programming book",
 		2, "Python Basics", "books", 2500, nil,
 		3, "Mechanical Keyboard", "electronics", 15000, nil,
@@ -40,7 +40,7 @@ func runFiltering(t *testing.T, conn Conn, s Suite) {
 
 	tests := []struct {
 		name  string
-		where syntax.SqlFragment
+		where syntax.SQLFragment
 		args  []any
 		want  []int
 	}{
@@ -64,24 +64,46 @@ func runFiltering(t *testing.T, conn Conn, s Suite) {
 			[]any{"books", 2800},
 			[]int{1, 2},
 		},
+		// Dynamic filters often end up empty; each must still be valid SQL.
+		{"EmptyAnd", syntax.And(), nil, []int{1, 2, 3, 4, 5, 6}},
+		{"EmptyOr", syntax.Or(), nil, nil},
+		{"EmptyIn", syntax.In("category"), nil, nil},
+		{"EmptyNotIn", syntax.NotIn("category"), nil, []int{1, 2, 3, 4, 5, 6}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sql := s.From("products").Select("id").Where(tt.where).OrderBy(syntax.Asc("id")).ToSql()
+			sql := s.From("products").Select("id").Where(tt.where).OrderBy(syntax.Asc("id")).MustSQL()
 			AssertSlice(t, QueryColumn[int](t, conn, sql, tt.args...), tt.want)
 		})
 	}
 
+	// A second Where narrows the first instead of replacing it, so a shared base
+	// filter survives.
+	t.Run("WhereTwice", func(t *testing.T) {
+		sql := s.From("products").Select("id").
+			Where(syntax.Eq("category", syntax.P(1))).
+			Where(syntax.Lt("price", syntax.P(2))).
+			MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, sql, "books", 2800), []int{2})
+	})
+
+	// Name length orders the rows differently from both id and name, so the
+	// result proves the expression itself was sorted on.
+	t.Run("OrderByExpression", func(t *testing.T) {
+		sql := s.From("products").Select("id").OrderBy(syntax.Asc(syntax.Fn("LENGTH", "name"))).MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{4, 6, 5, 2, 1, 3})
+	})
+
 	t.Run("Distinct", func(t *testing.T) {
-		sql := s.From("products").Select("category").Distinct().OrderBy(syntax.Asc("category")).ToSql()
+		sql := s.From("products").Select("category").Distinct().OrderBy(syntax.Asc("category")).MustSQL()
 		AssertSlice(t, QueryColumn[string](t, conn, sql),
 			[]string{"books", "electronics", "kitchen", "stationery"})
 	})
 
 	t.Run("LimitOffset", func(t *testing.T) {
 		page := s.From("products").Select("id").OrderBy(syntax.Desc("price")).Limit(2)
-		AssertSlice(t, QueryColumn[int](t, conn, page.ToSql()), []int{3, 4})
-		AssertSlice(t, QueryColumn[int](t, conn, page.Offset(2).ToSql()), []int{1, 2})
+		AssertSlice(t, QueryColumn[int](t, conn, page.MustSQL()), []int{3, 4})
+		AssertSlice(t, QueryColumn[int](t, conn, page.Offset(2).MustSQL()), []int{1, 2})
 	})
 }
 
@@ -107,19 +129,19 @@ func runJoins(t *testing.T, conn Conn, s Suite) {
 	on := syntax.Eq("c.id", "o.customer_id")
 
 	t.Run("Inner", func(t *testing.T) {
-		sql := from.InnerJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSql()
+		sql := from.InnerJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Alice", 1}, {"Alice", 2}, {"Bob", 3}})
 	})
 
 	t.Run("Left", func(t *testing.T) {
-		sql := from.LeftJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSql()
+		sql := from.LeftJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Carol", 0}, {"Alice", 1}, {"Alice", 2}, {"Bob", 3}})
 	})
 
 	t.Run("Right", func(t *testing.T) {
-		sql := from.RightJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSql()
+		sql := from.RightJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Alice", 1}, {"Alice", 2}, {"Bob", 3}, {"?", 4}})
 	})
@@ -128,7 +150,7 @@ func runJoins(t *testing.T, conn Conn, s Suite) {
 		if !s.FullJoin {
 			t.Skip("FULL OUTER JOIN is not supported")
 		}
-		sql := from.FullJoin(syntax.As("orders", "o"), on).OrderBy("order_id").ToSql()
+		sql := from.FullJoin(syntax.As("orders", "o"), on).OrderBy("order_id").MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanPair, sql),
 			[]pair{{"Carol", 0}, {"Alice", 1}, {"Alice", 2}, {"Bob", 3}, {"?", 4}})
 	})
@@ -137,7 +159,7 @@ func runJoins(t *testing.T, conn Conn, s Suite) {
 		sql := s.From(syntax.As("customers", "a")).
 			Select(syntax.Fn("COUNT", "*")).
 			CrossJoin(syntax.As("customers", "b")).
-			ToSql()
+			MustSQL()
 		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{9})
 	})
 }
@@ -163,7 +185,7 @@ func runSubqueries(t *testing.T, conn Conn, s Suite) {
 			Select("t.customer_id").
 			Where(syntax.Gt("t.total", syntax.P(1))).
 			OrderBy(syntax.Asc("t.customer_id")).
-			ToSql()
+			MustSQL()
 		AssertSlice(t, QueryColumn[int](t, conn, sql, 600), []int{1, 99})
 	})
 
@@ -172,7 +194,7 @@ func runSubqueries(t *testing.T, conn Conn, s Suite) {
 			Select("c.name", syntax.As(syntax.Fn("COALESCE", "t.total", 0), "total")).
 			LeftJoin(syntax.As(totals, "t"), syntax.Eq("c.id", "t.customer_id")).
 			OrderBy(syntax.Asc("c.id")).
-			ToSql()
+			MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanNameTotal, sql),
 			[]nameTotal{{"Alice", 3000}, {"Bob", 500}, {"Carol", 0}})
 	})
@@ -184,14 +206,14 @@ func runSubqueries(t *testing.T, conn Conn, s Suite) {
 		sql := s.From(syntax.As("customers", "c")).
 			Select("c.name", syntax.As(orderCount, "n")).
 			OrderBy(syntax.Asc("c.id")).
-			ToSql()
+			MustSQL()
 		AssertSlice(t, QueryRows(t, conn, scanNameTotal, sql),
 			[]nameTotal{{"Alice", 2}, {"Bob", 1}, {"Carol", 0}})
 	})
 
 	t.Run("WhereIn", func(t *testing.T) {
 		buyers := s.From("orders").Select("customer_id")
-		sql := s.From("customers").Select("name").Where(syntax.In("id", buyers)).OrderBy(syntax.Asc("id")).ToSql()
+		sql := s.From("customers").Select("name").Where(syntax.In("id", buyers)).OrderBy(syntax.Asc("id")).MustSQL()
 		AssertSlice(t, QueryColumn[string](t, conn, sql), []string{"Alice", "Bob"})
 	})
 }
@@ -215,7 +237,7 @@ func seedCustomersAndOrders(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(1), syntax.P(2)).
 			Values(syntax.P(3), syntax.P(4)).
 			Values(syntax.P(5), syntax.P(6)).
-			ToSql(),
+			MustSQL(),
 		1, "Alice", 2, "Bob", 3, "Carol",
 	)
 	MustExec(t, conn,
@@ -225,7 +247,7 @@ func seedCustomersAndOrders(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(4), syntax.P(5), syntax.P(6)).
 			Values(syntax.P(7), syntax.P(8), syntax.P(9)).
 			Values(syntax.P(10), syntax.P(11), syntax.P(12)).
-			ToSql(),
+			MustSQL(),
 		1, 1, 1000,
 		2, 1, 2000,
 		3, 2, 500,
@@ -254,7 +276,7 @@ func runCTE(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(13), syntax.P(14), syntax.P(15), syntax.P(16)).
 			Values(syntax.P(17), syntax.P(18), syntax.P(19), syntax.P(20)).
 			Values(syntax.P(21), syntax.P(22), syntax.P(23), syntax.P(24)).
-			ToSql(),
+			MustSQL(),
 		1, "Alice", 5000, "2025-01-10",
 		2, "Alice", 3000, "2025-01-20",
 		3, "Bob", 8000, "2025-01-15",
@@ -272,7 +294,7 @@ func runCTE(t *testing.T, conn Conn, s Suite) {
 		GroupBy("rep_name").
 		Having(syntax.Gte(syntax.Fn("SUM", "amount"), syntax.P(3))).
 		OrderBy(syntax.Asc("rep_name")).
-		ToSql()
+		MustSQL()
 
 	type repTotal struct {
 		name  string
@@ -283,6 +305,16 @@ func runCTE(t *testing.T, conn Conn, s Suite) {
 		return v, r.Scan(&v.name, &v.total)
 	}, sql, "2025-01-01", "2025-01-31", 5000)
 	AssertSlice(t, got, []repTotal{{"Alice", 8000}, {"Bob", 8000}})
+
+	// "order" is a reserved word; the CTE works only because its name is quoted.
+	t.Run("ReservedName", func(t *testing.T) {
+		var count int
+		big := s.From("sales").Select("id").Where(syntax.Gt("amount", syntax.P(1)))
+		MustScan(t, conn, s.From("order").With("order", big).Select(syntax.Fn("COUNT", "*")).MustSQL(), []any{5000}, &count)
+		if count != 2 {
+			t.Errorf("COUNT(*) FROM the CTE = %d; want 2", count)
+		}
+	})
 }
 
 // runRecursiveCTE walks an org chart to collect every direct and indirect
@@ -303,7 +335,7 @@ func runRecursiveCTE(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(5), syntax.P(6)).
 			Values(syntax.P(7), syntax.P(8)).
 			Values(syntax.P(9), syntax.P(10)).
-			ToSql(),
+			MustSQL(),
 		1, nil, 2, 1, 3, 1, 4, 2, 5, 4,
 	)
 
@@ -315,7 +347,7 @@ func runRecursiveCTE(t *testing.T, conn Conn, s Suite) {
 		WithRecursive("reports", anchor.UnionAll(step)).
 		Select("id").
 		OrderBy(syntax.Asc("id")).
-		ToSql()
+		MustSQL()
 
 	AssertSlice(t, QueryColumn[int](t, conn, sql, 2), []int{4, 5})
 }
@@ -331,7 +363,7 @@ func runSetOperations(t *testing.T, conn Conn, s Suite) {
 		for i := range ids {
 			b = b.Values(syntax.P(i + 1))
 		}
-		MustExec(t, conn, b.ToSql(), ids...)
+		MustExec(t, conn, b.MustSQL(), ids...)
 	}
 	insertIDs("premium", 1, 2, 2, 3)
 	insertIDs("newsletter", 2, 3, 4, 5)
@@ -340,7 +372,7 @@ func runSetOperations(t *testing.T, conn Conn, s Suite) {
 	newsletter := s.From("newsletter").Select("user_id")
 	tests := []struct {
 		name    string
-		query   builder.SqlSelectBuilder
+		query   builder.CompoundBuilder
 		needAll bool
 		want    []int
 	}{
@@ -356,8 +388,60 @@ func runSetOperations(t *testing.T, conn Conn, s Suite) {
 			if tt.needAll && !s.SetOpAll {
 				t.Skip("INTERSECT ALL / EXCEPT ALL are not supported")
 			}
-			// A set operation has no overall ORDER BY in sqbl, so sort here.
-			got := QueryColumn[int](t, conn, tt.query.ToSql())
+			got := QueryColumn[int](t, conn, tt.query.MustSQL())
+			slices.Sort(got)
+			AssertSlice(t, got, tt.want)
+		})
+	}
+
+	// ORDER BY, LIMIT and OFFSET on a compound apply to the combined result.
+	t.Run("OrderByLimitOffset", func(t *testing.T) {
+		sql := premium.Union(newsletter).OrderBy(syntax.Desc("user_id")).Limit(2).Offset(1).MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, sql), []int{4, 3})
+	})
+
+	t.Run("AsSubquery", func(t *testing.T) {
+		in := s.From("newsletter").Select("user_id").
+			Where(syntax.In("user_id", premium.Intersect(newsletter))).
+			OrderBy(syntax.Asc("user_id")).
+			MustSQL()
+		AssertSlice(t, QueryColumn[int](t, conn, in), []int{2, 3})
+
+		var count int
+		from := s.From(syntax.As(premium.Union(newsletter), "members")).Select(syntax.Fn("COUNT", "*")).MustSQL()
+		MustScan(t, conn, from, nil, &count)
+		if count != 5 {
+			t.Errorf("COUNT(*) over the union = %d; want 5", count)
+		}
+	})
+
+	// Grouping must follow the call chain. Each case is chosen so that the
+	// ungrouped reading returns different rows, which would go unnoticed.
+	premiumOnly := func(id int) builder.SelectBuilder {
+		return s.From("premium").Select("user_id").Where(syntax.Eq("user_id", id))
+	}
+	newsletterOnly := func(id int) builder.SelectBuilder {
+		return s.From("newsletter").Select("user_id").Where(syntax.Eq("user_id", id))
+	}
+	grouped := []struct {
+		name  string
+		query builder.CompoundBuilder
+		want  []int
+	}{
+		// {1,2,3} EXCEPT ({2} UNION {3}) = {1}; read flat it would be {1,3}.
+		{"NestedRightOperand", premium.Except(newsletterOnly(2).Union(premiumOnly(3))), []int{1}},
+		// ({1,2,3} UNION {2,3,4,5}) INTERSECT {1} = {1}; with INTERSECT binding first it would be {1,2,3}.
+		{"IntersectAfterUnion", premium.Union(newsletter).Intersect(premiumOnly(1)), []int{1}},
+	}
+	for _, tt := range grouped {
+		t.Run(tt.name, func(t *testing.T) {
+			sql := tt.query.MustSQL()
+			if !s.ParenthesizedSetOperands {
+				// Rejecting the query is acceptable; silently answering a different question is not.
+				MustFail(t, conn, "parenthesized set operand", sql)
+				return
+			}
+			got := QueryColumn[int](t, conn, sql)
 			slices.Sort(got)
 			AssertSlice(t, got, tt.want)
 		})
@@ -380,7 +464,7 @@ func runWindowFunctions(t *testing.T, conn Conn, s Suite) {
 			Values(syntax.P(1), syntax.P(2), syntax.P(3)).
 			Values(syntax.P(4), syntax.P(5), syntax.P(6)).
 			Values(syntax.P(7), syntax.P(8), syntax.P(9)).
-			ToSql(),
+			MustSQL(),
 		1, "Alice", 3000,
 		2, "Bob", 7000,
 		3, "Alice", 5000,
@@ -394,7 +478,7 @@ func runWindowFunctions(t *testing.T, conn Conn, s Suite) {
 			syntax.As(syntax.Over(syntax.Fn("SUM", "amount")).OrderBy("id").Rows("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"), "running"),
 		).
 		OrderBy(syntax.Asc("id")).
-		ToSql()
+		MustSQL()
 
 	type row struct{ id, rank, repTotal, running int }
 	got := QueryRows(t, conn, func(r Rows) (row, error) {

@@ -2,7 +2,7 @@ package builder_test
 
 import "testing"
 
-func TestSqlDropTableBuilder_Clauses(t *testing.T) {
+func TestDropTableBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	users := newDropTable().Table("users")
 

@@ -12,12 +12,13 @@ func TestWindowExpr(t *testing.T) {
 	const frame = "BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
 	tests := []struct {
 		name string
-		w    SqlFragment
+		w    SQLFragment
 		want string
 	}{
 		{"empty window", Over(Fn("ROW_NUMBER")), "ROW_NUMBER() OVER ()"},
 		{"PARTITION BY only", Over(Fn("ROW_NUMBER")).PartitionBy("u.dept", "region"), `ROW_NUMBER() OVER (PARTITION BY "u"."dept", "region")`},
 		{"ORDER BY only", Over(Fn("RANK")).OrderBy("salary", Desc("u.hired_at")), `RANK() OVER (ORDER BY "salary", "u"."hired_at" DESC)`},
+		{"PARTITION BY expression", Over(Fn("RANK")).PartitionBy(Fn("DATE_TRUNC", Raw("'month'"), "at")), `RANK() OVER (PARTITION BY DATE_TRUNC('month', "at"))`},
 		{"frame only", Over(Fn("SUM", "amount")).Rows(frame), `SUM("amount") OVER (ROWS ` + frame + `)`},
 		{"PARTITION BY and frame", Over(Fn("SUM", "amount")).PartitionBy("dept").Range(frame), `SUM("amount") OVER (PARTITION BY "dept" RANGE ` + frame + `)`},
 		{

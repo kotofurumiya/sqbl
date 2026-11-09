@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	sqbl "github.com/kotofurumiya/sqbl/sqblpg"
 )
@@ -16,8 +17,16 @@ func main() {
 	// ---------------------------------------------------------------
 	// 1. SELECT * — retrieve every column
 	// ---------------------------------------------------------------
+	// ToSQL returns an error when a query holds input that has no safe SQL
+	// form, such as a value of an unsupported Go type. Handle it like any
+	// other error; the rest of this file uses MustSQL, which panics instead,
+	// because every query here is built from constants.
+	//
 	// SELECT * FROM "employees";
-	sql01 := sqbl.From("employees").ToSql()
+	sql01, err := sqbl.From("employees").ToSQL()
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println(sql01)
 
 	// ---------------------------------------------------------------
@@ -26,7 +35,7 @@ func main() {
 	// SELECT * FROM "employees" WHERE "salary" > 50000;
 	sql02 := sqbl.From("employees").
 		Where(sqbl.Gt("salary", 50000)).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql02)
 
 	// ---------------------------------------------------------------
@@ -37,7 +46,7 @@ func main() {
 		Select("name", "salary").
 		OrderBy(sqbl.Desc("salary")).
 		Limit(5).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql03)
 
 	// ---------------------------------------------------------------
@@ -47,7 +56,7 @@ func main() {
 	sql04 := sqbl.From("employees").
 		Select("dept_id").
 		Distinct().
-		ToSql()
+		MustSQL()
 	fmt.Println(sql04)
 
 	// ---------------------------------------------------------------
@@ -60,7 +69,7 @@ func main() {
 			sqbl.Fn("SUM", "salary"),
 			sqbl.Fn("AVG", "salary"),
 		).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql05)
 
 	// ---------------------------------------------------------------
@@ -78,7 +87,7 @@ func main() {
 		).
 		GroupBy("dept_id").
 		OrderBy(sqbl.Desc("headcount")).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql06)
 
 	// ---------------------------------------------------------------
@@ -90,7 +99,7 @@ func main() {
 	sql07 := sqbl.From(sqbl.As("employees", "e")).
 		Select("e.name", sqbl.As("d.name", "dept")).
 		InnerJoin(sqbl.As("departments", "d"), sqbl.Eq("e.dept_id", "d.id")).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql07)
 
 	// ---------------------------------------------------------------
@@ -102,7 +111,7 @@ func main() {
 	sql08 := sqbl.From(sqbl.As("employees", "e")).
 		Select("e.name", sqbl.As("d.name", "dept")).
 		LeftJoin(sqbl.As("departments", "d"), sqbl.Eq("e.dept_id", "d.id")).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql08)
 
 	// ---------------------------------------------------------------
@@ -114,7 +123,7 @@ func main() {
 	sql09 := sqbl.From("employees").
 		Select("name", "salary").
 		Where(sqbl.Gt("salary", avgSalary)).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql09)
 
 	// ---------------------------------------------------------------
@@ -129,7 +138,7 @@ func main() {
 			sqbl.Eq("dept_id", sqbl.P(1)),
 			sqbl.Gt("salary", sqbl.P(2)),
 		)).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql10a)
 
 	// Named (:param) — useful for named-parameter drivers
@@ -140,7 +149,7 @@ func main() {
 			sqbl.Eq("dept_id", sqbl.P(":dept_id")),
 			sqbl.Gt("salary", sqbl.P(":min_salary")),
 		)).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql10b)
 
 	// Positional (?) — for drivers that use positional ? placeholders (e.g. MySQL, SQLite)
@@ -151,6 +160,6 @@ func main() {
 			sqbl.Eq("dept_id", sqbl.P()),
 			sqbl.Gt("salary", sqbl.P()),
 		)).
-		ToSql()
+		MustSQL()
 	fmt.Println(sql10c)
 }

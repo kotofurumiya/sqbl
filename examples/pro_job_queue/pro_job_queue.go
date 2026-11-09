@@ -29,7 +29,7 @@ func main() {
 		OrderBy(sqbl.Asc("id")).
 		Limit(1).
 		ForUpdate().SkipLocked().
-		ToSql()
+		MustSQL()
 	fmt.Println(claimJob)
 
 	// Step 2: Mark the claimed job as processing.
@@ -39,7 +39,7 @@ func main() {
 		Set("status", sqbl.Raw("'processing'")).
 		Set("started_at", sqbl.Fn("NOW")).
 		Where(sqbl.Eq("id", sqbl.P(1))).
-		ToSql()
+		MustSQL()
 	fmt.Println(startJob)
 
 	// Step 3a: Mark the job as done.
@@ -51,7 +51,7 @@ func main() {
 		Set("finished_at", sqbl.Fn("NOW")).
 		Where(sqbl.Eq("id", sqbl.P(1))).
 		Returning("id", "type").
-		ToSql()
+		MustSQL()
 	fmt.Println(completeJob)
 
 	// Step 3b: Mark the job as failed and record the error message.
@@ -64,6 +64,6 @@ func main() {
 		Set("finished_at", sqbl.Fn("NOW")).
 		Where(sqbl.Eq("id", sqbl.P(2))).
 		Returning("id", "type").
-		ToSql()
+		MustSQL()
 	fmt.Println(failJob)
 }

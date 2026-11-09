@@ -1,13 +1,16 @@
 package builder_test
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/kotofurumiya/sqbl/builder"
 
 	"github.com/kotofurumiya/sqbl/internal/sqltesting"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlSelectBuilder_Clauses(t *testing.T) {
+func TestSelectBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	runSQLCases(t, []sqlCase{
 		{
@@ -74,22 +77,45 @@ func TestSqlSelectBuilder_Clauses(t *testing.T) {
 			want: `SELECT * FROM "users" OFFSET 20;`,
 		},
 		{
-			name: "single-value clauses are replaced by later calls",
+			name: "list and single-value clauses are replaced by later calls",
 			b: newSelect().
 				From("old").From("users").
 				Select("old").Select("id").
-				Where(syntax.Eq("old", 1)).Where(syntax.Eq("id", 1)).
 				GroupBy("old").GroupBy("id").
-				Having(syntax.Eq("old", 1)).Having(syntax.Gt("id", 0)).
 				OrderBy("old").OrderBy("id").
+				DistinctOn("old").DistinctOn("id").
 				Limit(1).Limit(10).
 				Offset(1).Offset(20),
-			want: `SELECT "id" FROM "users" WHERE "id" = 1 GROUP BY "id" HAVING "id" > 0 ORDER BY "id" LIMIT 10 OFFSET 20;`,
+			want: `SELECT DISTINCT ON ("id") "id" FROM "users" GROUP BY "id" ORDER BY "id" LIMIT 10 OFFSET 20;`,
+		},
+		{
+			// Each call narrows the query, so filters added to a shared base are never lost.
+			name: "where and having conditions accumulate with and",
+			b: newSelect().From("orders").GroupBy("user_id").
+				Where(syntax.Eq("tenant_id", syntax.P(1))).
+				Where(syntax.Or(syntax.Eq("status", syntax.P(2)), syntax.Eq("status", syntax.P(3)))).
+				Having(syntax.Gt(syntax.Fn("COUNT", "*"), 1)).
+				Having(syntax.Lt(syntax.Fn("SUM", "amount"), 100)),
+			want: `
+				SELECT * FROM "orders"
+				WHERE "tenant_id" = $1 AND ("status" = $2 OR "status" = $3)
+				GROUP BY "user_id"
+				HAVING COUNT(*) > 1 AND SUM("amount") < 100;`,
+		},
+		{
+			name: "nil conditions are ignored",
+			b:    newSelect().From("users").Where(nil).Where(syntax.Eq("id", 1)).Where(nil).Having(nil),
+			want: `SELECT * FROM "users" WHERE "id" = 1;`,
+		},
+		{
+			name: "distinct on accepts expressions",
+			b:    newSelect().From("users").DistinctOn(syntax.Fn("LOWER", "email")).OrderBy(syntax.Fn("LOWER", "email")),
+			want: `SELECT DISTINCT ON (LOWER("email")) * FROM "users" ORDER BY LOWER("email");`,
 		},
 	})
 }
 
-func TestSqlSelectBuilder_Joins(t *testing.T) {
+func TestSelectBuilder_Joins(t *testing.T) {
 	t.Parallel()
 	users := newSelect().From(syntax.As("users", "u")).Select("u.id")
 	on := syntax.Eq("u.id", "o.user_id")
@@ -155,32 +181,101 @@ func TestSqlSelectBuilder_Joins(t *testing.T) {
 	})
 }
 
-func TestSqlSelectBuilder_SetOperations(t *testing.T) {
+func TestSelectBuilder_InvalidSources(t *testing.T) {
 	t.Parallel()
-	active := newSelect().From("active_users").Select("id")
-	premium := newSelect().From("premium_users").Select("id")
+	users := newSelect().From("users")
+
+	runErrCases(t, []errCase{
+		{"join without on", users.Join("orders", nil), "Join needs an ON condition"},
+		{"inner join without on", users.InnerJoin("orders", nil), "InnerJoin needs an ON condition"},
+		{"left join without on", users.LeftJoin("orders", nil), "LeftJoin needs an ON condition"},
+		{"right join without on", users.RightJoin("orders", nil), "RightJoin needs an ON condition"},
+		{"full join without on", users.FullJoin("orders", nil), "FullJoin needs an ON condition"},
+		{"nil join table", users.CrossJoin(nil), "CrossJoin got nil"},
+		{"nil from", newSelect().From(nil), "From got nil"},
+	})
+}
+
+func TestSelectBuilder_SetOperations(t *testing.T) {
+	t.Parallel()
+	a := newSelect().From("a").Select("id")
+	b := newSelect().From("b").Select("id")
+	c := newSelect().From("c").Select("id")
 
 	runSQLCases(t, []sqlCase{
-		{"union", active.Union(premium), `SELECT "id" FROM "active_users" UNION SELECT "id" FROM "premium_users";`},
-		{"union all", active.UnionAll(premium), `SELECT "id" FROM "active_users" UNION ALL SELECT "id" FROM "premium_users";`},
-		{"intersect", active.Intersect(premium), `SELECT "id" FROM "active_users" INTERSECT SELECT "id" FROM "premium_users";`},
-		{"intersect all", active.IntersectAll(premium), `SELECT "id" FROM "active_users" INTERSECT ALL SELECT "id" FROM "premium_users";`},
-		{"except", active.Except(premium), `SELECT "id" FROM "active_users" EXCEPT SELECT "id" FROM "premium_users";`},
-		{"except all", active.ExceptAll(premium), `SELECT "id" FROM "active_users" EXCEPT ALL SELECT "id" FROM "premium_users";`},
+		{"union", a.Union(b), `SELECT "id" FROM "a" UNION SELECT "id" FROM "b";`},
+		{"union all", a.UnionAll(b), `SELECT "id" FROM "a" UNION ALL SELECT "id" FROM "b";`},
+		{"intersect", a.Intersect(b), `SELECT "id" FROM "a" INTERSECT SELECT "id" FROM "b";`},
+		{"intersect all", a.IntersectAll(b), `SELECT "id" FROM "a" INTERSECT ALL SELECT "id" FROM "b";`},
+		{"except", a.Except(b), `SELECT "id" FROM "a" EXCEPT SELECT "id" FROM "b";`},
+		{"except all", a.ExceptAll(b), `SELECT "id" FROM "a" EXCEPT ALL SELECT "id" FROM "b";`},
 		{
-			name: "operations chain in call order with their own clauses",
-			b: active.
-				Union(premium.Where(syntax.Gt("id", syntax.P(1)))).
-				Except(newSelect().From("banned_users").Select("id")),
+			name: "operations chain left to right without parentheses",
+			b:    a.Union(b.Where(syntax.Gt("id", syntax.P(1)))).Except(c).UnionAll(c),
 			want: `
-				SELECT "id" FROM "active_users"
-				UNION SELECT "id" FROM "premium_users" WHERE "id" > $1
-				EXCEPT SELECT "id" FROM "banned_users";`,
+				SELECT "id" FROM "a"
+				UNION SELECT "id" FROM "b" WHERE "id" > $1
+				EXCEPT SELECT "id" FROM "c"
+				UNION ALL SELECT "id" FROM "c";`,
+		},
+		{
+			name: "order by, limit and offset apply to the combined rows",
+			b:    a.Union(b).OrderBy(syntax.Desc("id")).Limit(10).Offset(5),
+			want: `SELECT "id" FROM "a" UNION SELECT "id" FROM "b" ORDER BY "id" DESC LIMIT 10 OFFSET 5;`,
+		},
+		{
+			name: "operands with their own trailing clauses are parenthesized",
+			b:    a.OrderBy("id").Limit(1).Union(b.ForUpdate()).Union(c.Offset(2)),
+			want: `
+				(SELECT "id" FROM "a" ORDER BY "id" LIMIT 1)
+				UNION (SELECT "id" FROM "b" FOR UPDATE)
+				UNION (SELECT "id" FROM "c" OFFSET 2);`,
+		},
+		{
+			// A WITH on the leftmost operand already scopes over the whole compound.
+			name: "with is parenthesized only on the right",
+			b:    a.With("x", c).Union(b.With("y", c)),
+			want: `
+				WITH "x" AS (SELECT "id" FROM "c") SELECT "id" FROM "a"
+				UNION (WITH "y" AS (SELECT "id" FROM "c") SELECT "id" FROM "b");`,
+		},
+		{
+			// Flattening would read as (a EXCEPT b) UNION c.
+			name: "compound on the right is parenthesized",
+			b:    a.Except(b.Union(c)),
+			want: `SELECT "id" FROM "a" EXCEPT (SELECT "id" FROM "b" UNION SELECT "id" FROM "c");`,
+		},
+		{
+			// INTERSECT binds tighter than UNION, so a flat chain would read as a UNION (b INTERSECT c).
+			name: "intersect after union groups the earlier operations",
+			b:    a.Union(b).Intersect(c),
+			want: `(SELECT "id" FROM "a" UNION SELECT "id" FROM "b") INTERSECT SELECT "id" FROM "c";`,
+		},
+		{
+			name: "intersect after intersect stays flat",
+			b:    a.Intersect(b).Intersect(c),
+			want: `SELECT "id" FROM "a" INTERSECT SELECT "id" FROM "b" INTERSECT SELECT "id" FROM "c";`,
+		},
+		{
+			name: "continuing a limited compound groups it first",
+			b:    a.Union(b).Limit(1).Union(c),
+			want: `(SELECT "id" FROM "a" UNION SELECT "id" FROM "b" LIMIT 1) UNION SELECT "id" FROM "c";`,
+		},
+		{
+			name: "compound as a source, an in operand and a cte",
+			b: newSelect().
+				With("ids", a.Union(b)).
+				From(syntax.As(a.Union(b), "u")).
+				Where(syntax.In("u.id", a.Intersect(b))),
+			want: `
+				WITH "ids" AS (SELECT "id" FROM "a" UNION SELECT "id" FROM "b")
+				SELECT * FROM (SELECT "id" FROM "a" UNION SELECT "id" FROM "b") AS "u"
+				WHERE "u"."id" IN (SELECT "id" FROM "a" INTERSECT SELECT "id" FROM "b");`,
 		},
 	})
 }
 
-func TestSqlSelectBuilder_Locking(t *testing.T) {
+func TestSelectBuilder_Locking(t *testing.T) {
 	t.Parallel()
 	q := newSelect().From("jobs").Select("id")
 
@@ -192,11 +287,15 @@ func TestSqlSelectBuilder_Locking(t *testing.T) {
 		{"nowait", q.ForUpdate().Nowait(), `SELECT "id" FROM "jobs" FOR UPDATE NOWAIT;`},
 		{"skip locked", q.ForUpdate().SkipLocked(), `SELECT "id" FROM "jobs" FOR UPDATE SKIP LOCKED;`},
 		{"later lock strength wins", q.ForUpdate().ForShare().SkipLocked(), `SELECT "id" FROM "jobs" FOR SHARE SKIP LOCKED;`},
-		{"option alone renders nothing", q.SkipLocked(), `SELECT "id" FROM "jobs";`},
+		{"later option wins", q.ForUpdate().SkipLocked().Nowait(), `SELECT "id" FROM "jobs" FOR UPDATE NOWAIT;`},
+	})
+	runErrCases(t, []errCase{
+		{"nowait without lock", q.Nowait(), "Nowait needs a locking clause"},
+		{"skip locked without lock", q.SkipLocked(), "SkipLocked needs a locking clause"},
 	})
 }
 
-func TestSqlSelectBuilder_CTE(t *testing.T) {
+func TestSelectBuilder_CTE(t *testing.T) {
 	t.Parallel()
 	recent := newSelect().From("orders").Where(syntax.Gt("created_at", syntax.P(1)))
 	big := newSelect().From("recent").Where(syntax.Gt("amount", syntax.P(2)))
@@ -245,7 +344,7 @@ func TestSqlSelectBuilder_CTE(t *testing.T) {
 	})
 }
 
-func TestSqlSelectBuilder_Subqueries(t *testing.T) {
+func TestSelectBuilder_Subqueries(t *testing.T) {
 	t.Parallel()
 	totals := newSelect().From("orders").
 		Select("user_id", syntax.As(syntax.Fn("SUM", "amount"), "total")).
@@ -300,9 +399,9 @@ func TestSqlSelectBuilder_Subqueries(t *testing.T) {
 	})
 }
 
-// TestSqlSelectBuilder_AllClauses pins the order in which clauses are rendered,
+// TestSelectBuilder_AllClauses pins the order in which clauses are rendered,
 // independent of the order the methods are called in.
-func TestSqlSelectBuilder_AllClauses(t *testing.T) {
+func TestSelectBuilder_AllClauses(t *testing.T) {
 	t.Parallel()
 	got := newSelect().
 		ForUpdate().SkipLocked().
@@ -316,8 +415,7 @@ func TestSqlSelectBuilder_AllClauses(t *testing.T) {
 		Select("u.id", syntax.As(syntax.Fn("SUM", "o.amount"), "total")).
 		Distinct().
 		With("recent", newSelect().From("orders")).
-		UnionAll(newSelect().From("archived_totals").Select("user_id", "total")).
-		ToSql()
+		MustSQL()
 
 	sqltesting.AssertSQL(t, got, `
 		WITH "recent" AS (SELECT * FROM "orders")
@@ -329,36 +427,58 @@ func TestSqlSelectBuilder_AllClauses(t *testing.T) {
 		HAVING SUM("o"."amount") > $2
 		ORDER BY "total" DESC
 		LIMIT 10 OFFSET 20
-		FOR UPDATE SKIP LOCKED
-		UNION ALL SELECT "user_id", "total" FROM "archived_totals";`)
+		FOR UPDATE SKIP LOCKED;`)
 }
 
-// TestSqlSelectBuilder_BranchIsolation checks that deriving two queries from a
+// TestSelectBuilder_BranchIsolation checks that deriving two queries from a
 // shared base does not leak appended clauses between them or into the base.
 // The base holds three items per list so that a backing array with spare
 // capacity would be shared if a method appended in place.
-func TestSqlSelectBuilder_BranchIsolation(t *testing.T) {
+func TestSelectBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	cte := newSelect().From("t")
-	other := newSelect().From("s")
 	base := newSelect().From("u").
 		With("a", cte).With("b", cte).With("c", cte).
 		CrossJoin("j1").CrossJoin("j2").CrossJoin("j3").
-		Union(other).Union(other).Union(other)
+		Where(syntax.Eq("w", 1)).Where(syntax.Eq("w", 2)).Where(syntax.Eq("w", 3))
 
-	left := base.With("l", cte).CrossJoin("jl").Except(other)
-	right := base.With("r", cte).CrossJoin("jr").Intersect(other)
+	left := base.With("l", cte).CrossJoin("jl").Where(syntax.Eq("l", 1))
+	right := base.With("r", cte).CrossJoin("jr").Where(syntax.Eq("r", 1))
 
-	sqltesting.AssertSQL(t, base.ToSql(), `
+	sqltesting.AssertSQL(t, base.MustSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3"
-		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s";`)
-	sqltesting.AssertSQL(t, left.ToSql(), `
+		WHERE "w" = 1 AND "w" = 2 AND "w" = 3;`)
+	sqltesting.AssertSQL(t, left.MustSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "l" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jl"
-		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" EXCEPT SELECT * FROM "s";`)
-	sqltesting.AssertSQL(t, right.ToSql(), `
+		WHERE "w" = 1 AND "w" = 2 AND "w" = 3 AND "l" = 1;`)
+	sqltesting.AssertSQL(t, right.MustSQL(), `
 		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "r" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jr"
-		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" INTERSECT SELECT * FROM "s";`)
+		WHERE "w" = 1 AND "w" = 2 AND "w" = 3 AND "r" = 1;`)
+}
+
+// TestCompoundBuilder_BranchIsolation does the same for set operations.
+func TestCompoundBuilder_BranchIsolation(t *testing.T) {
+	t.Parallel()
+	s := newSelect().From("s")
+	base := newSelect().From("u").Union(s).Union(s).Union(s)
+	left := base.Except(s)
+	right := base.UnionAll(s)
+
+	sqltesting.AssertSQL(t, base.MustSQL(), `
+		SELECT * FROM "u" UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s";`)
+	sqltesting.AssertSQL(t, left.MustSQL(), `
+		SELECT * FROM "u" UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" EXCEPT SELECT * FROM "s";`)
+	sqltesting.AssertSQL(t, right.MustSQL(), `
+		SELECT * FROM "u" UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION ALL SELECT * FROM "s";`)
+}
+
+func TestCompoundBuilder_ZeroValue(t *testing.T) {
+	t.Parallel()
+	_, err := builder.CompoundBuilder{}.ToSQLWithDialect(pg)
+	if err == nil || !strings.Contains(err.Error(), "needs a left operand") {
+		t.Errorf("want an error about the missing left operand, got %v", err)
+	}
 }

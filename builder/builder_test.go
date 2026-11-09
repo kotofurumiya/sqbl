@@ -1,6 +1,7 @@
 package builder_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kotofurumiya/sqbl/builder"
@@ -10,40 +11,40 @@ import (
 
 // Builder tests render with PostgreSQL so that expected SQL reads like real SQL.
 // How each dialect quotes and numbers placeholders is covered in dialect/.
-var pg = &dialect.PostgresDialect{}
+var pg = &dialect.Postgres{}
 
-func newSelect() builder.SqlSelectBuilder { return (builder.SqlSelectBuilder{}).Dialect(pg) }
-func newInsert() builder.SqlInsertBuilder { return (builder.SqlInsertBuilder{}).Dialect(pg) }
-func newUpdate() builder.SqlUpdateBuilder { return (builder.SqlUpdateBuilder{}).Dialect(pg) }
-func newDelete() builder.SqlDeleteBuilder { return (builder.SqlDeleteBuilder{}).Dialect(pg) }
+func newSelect() builder.SelectBuilder { return (builder.SelectBuilder{}).Dialect(pg) }
+func newInsert() builder.InsertBuilder { return (builder.InsertBuilder{}).Dialect(pg) }
+func newUpdate() builder.UpdateBuilder { return (builder.UpdateBuilder{}).Dialect(pg) }
+func newDelete() builder.DeleteBuilder { return (builder.DeleteBuilder{}).Dialect(pg) }
 
-func newCreateTable() builder.SqlCreateTableBuilder {
-	return (builder.SqlCreateTableBuilder{}).Dialect(pg)
+func newCreateTable() builder.CreateTableBuilder {
+	return (builder.CreateTableBuilder{}).Dialect(pg)
 }
 
-func newCreateIndex() builder.SqlCreateIndexBuilder {
-	return (builder.SqlCreateIndexBuilder{}).Dialect(pg)
+func newCreateIndex() builder.CreateIndexBuilder {
+	return (builder.CreateIndexBuilder{}).Dialect(pg)
 }
 
-func newAlterTable() builder.SqlAlterTableBuilder {
-	return (builder.SqlAlterTableBuilder{}).Dialect(pg)
+func newAlterTable() builder.AlterTableBuilder {
+	return (builder.AlterTableBuilder{}).Dialect(pg)
 }
 
-func newDropTable() builder.SqlDropTableBuilder { return (builder.SqlDropTableBuilder{}).Dialect(pg) }
-func newDropIndex() builder.SqlDropIndexBuilder { return (builder.SqlDropIndexBuilder{}).Dialect(pg) }
+func newDropTable() builder.DropTableBuilder { return (builder.DropTableBuilder{}).Dialect(pg) }
+func newDropIndex() builder.DropIndexBuilder { return (builder.DropIndexBuilder{}).Dialect(pg) }
 
-func newCreateDatabase() builder.SqlCreateDatabaseBuilder {
-	return (builder.SqlCreateDatabaseBuilder{}).Dialect(pg)
+func newCreateDatabase() builder.CreateDatabaseBuilder {
+	return (builder.CreateDatabaseBuilder{}).Dialect(pg)
 }
 
-func newDropDatabase() builder.SqlDropDatabaseBuilder {
-	return (builder.SqlDropDatabaseBuilder{}).Dialect(pg)
+func newDropDatabase() builder.DropDatabaseBuilder {
+	return (builder.DropDatabaseBuilder{}).Dialect(pg)
 }
 
 // sqlCase is the common shape of table-driven builder tests.
 type sqlCase struct {
 	name string
-	b    builder.SqlBuilder
+	b    builder.Statement
 	want string
 }
 
@@ -52,25 +53,46 @@ func runSQLCases(t *testing.T, tests []sqlCase) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSql(), tt.want)
+			sqltesting.AssertSQL(t, tt.b.MustSQL(), tt.want)
 		})
 	}
 }
 
-// TestSqlBuilder_RenderContract checks the two render methods every builder shares:
-// ToSql uses the builder's own dialect and ends with a semicolon, while
-// ToSqlWithDialect uses the given dialect and has no semicolon.
-func TestSqlBuilder_RenderContract(t *testing.T) {
+// errCase is a statement whose rendering must fail with an error containing want.
+type errCase struct {
+	name string
+	b    builder.Statement
+	want string
+}
+
+func runErrCases(t *testing.T, tests []errCase) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sql, err := tt.b.ToSQL()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("want an error containing %q, got %v (SQL %q)", tt.want, err, sql)
+			}
+		})
+	}
+}
+
+// TestBuilder_RenderContract checks the two render methods every builder shares:
+// ToSQL uses the builder's own dialect and ends with a semicolon, while
+// ToSQLWithDialect uses the given dialect and has no semicolon.
+func TestBuilder_RenderContract(t *testing.T) {
 	t.Parallel()
-	mysql := &dialect.MysqlDialect{}
+	mysql := &dialect.MySQL{}
 
 	tests := []struct {
 		name      string
-		b         builder.SqlBuilder
-		wantToSql string
+		b         builder.Statement
+		wantToSQL string
 		wantMySQL string
 	}{
 		{"select", newSelect().From("users").Select("id"), `SELECT "id" FROM "users";`, "SELECT `id` FROM `users`"},
+		{"compound", newSelect().From("a").Union(newSelect().From("b")), `SELECT * FROM "a" UNION SELECT * FROM "b";`, "SELECT * FROM `a` UNION SELECT * FROM `b`"},
 		{"insert", newInsert().Into("users").Columns("id").Values(1), `INSERT INTO "users" ("id") VALUES (1);`, "INSERT INTO `users` (`id`) VALUES (1)"},
 		{"update", newUpdate().Table("users").Set("id", 1), `UPDATE "users" SET "id" = 1;`, "UPDATE `users` SET `id` = 1"},
 		{"delete", newDelete().From("users"), `DELETE FROM "users";`, "DELETE FROM `users`"},
@@ -85,41 +107,47 @@ func TestSqlBuilder_RenderContract(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sqltesting.AssertSQL(t, tt.b.ToSql(), tt.wantToSql)
-			sqltesting.AssertSQL(t, tt.b.ToSqlWithDialect(mysql), tt.wantMySQL)
+			sqltesting.AssertSQL(t, tt.b.MustSQL(), tt.wantToSQL)
+			sqltesting.AssertSQL(t, tt.b.MustSQLWithDialect(mysql), tt.wantMySQL)
 		})
 	}
 }
 
-// TestSqlBuilder_PanicsWithoutDialect checks that a missing dialect fails loudly
-// instead of rendering SQL with no quoting rules.
-func TestSqlBuilder_PanicsWithoutDialect(t *testing.T) {
+// TestBuilder_FailsWithoutDialect checks that a missing dialect is reported
+// instead of rendering SQL with no quoting rules, and that the Must variants
+// turn that report into a panic.
+func TestBuilder_FailsWithoutDialect(t *testing.T) {
 	t.Parallel()
 
 	builders := []struct {
 		name string
-		b    builder.SqlBuilder
+		b    builder.Statement
 	}{
-		{"select", builder.SqlSelectBuilder{}},
-		{"insert", builder.SqlInsertBuilder{}},
-		{"update", builder.SqlUpdateBuilder{}},
-		{"delete", builder.SqlDeleteBuilder{}},
-		{"create table", builder.SqlCreateTableBuilder{}},
-		{"create index", builder.SqlCreateIndexBuilder{}},
-		{"alter table", builder.SqlAlterTableBuilder{}},
-		{"drop table", builder.SqlDropTableBuilder{}},
-		{"drop index", builder.SqlDropIndexBuilder{}},
-		{"create database", builder.SqlCreateDatabaseBuilder{}},
-		{"drop database", builder.SqlDropDatabaseBuilder{}},
+		{"select", builder.SelectBuilder{}},
+		{"compound", builder.SelectBuilder{}.Union(builder.SelectBuilder{})},
+		{"zero compound", builder.CompoundBuilder{}},
+		{"insert", builder.InsertBuilder{}},
+		{"update", builder.UpdateBuilder{}},
+		{"delete", builder.DeleteBuilder{}},
+		{"create table", builder.CreateTableBuilder{}},
+		{"create index", builder.CreateIndexBuilder{}},
+		{"alter table", builder.AlterTableBuilder{}},
+		{"drop table", builder.DropTableBuilder{}},
+		{"drop index", builder.DropIndexBuilder{}},
+		{"create database", builder.CreateDatabaseBuilder{}},
+		{"drop database", builder.DropDatabaseBuilder{}},
 	}
 	for _, tt := range builders {
-		t.Run(tt.name+"/ToSql", func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assertPanics(t, func() { tt.b.ToSql() })
-		})
-		t.Run(tt.name+"/ToSqlWithDialect(nil)", func(t *testing.T) {
-			t.Parallel()
-			assertPanics(t, func() { tt.b.ToSqlWithDialect(nil) })
+			if _, err := tt.b.ToSQL(); err == nil {
+				t.Error("ToSQL: want an error")
+			}
+			if _, err := tt.b.ToSQLWithDialect(nil); err == nil {
+				t.Error("ToSQLWithDialect(nil): want an error")
+			}
+			assertPanics(t, func() { tt.b.MustSQL() })
+			assertPanics(t, func() { tt.b.MustSQLWithDialect(nil) })
 		})
 	}
 }
@@ -134,21 +162,23 @@ func assertPanics(t *testing.T, f func()) {
 	f()
 }
 
-// TestSqlBuilder_CopiesCallerSlices checks that builders keep their own copy of
+// TestBuilder_CopiesCallerSlices checks that builders keep their own copy of
 // slices passed to variadic methods, so reusing a slice cannot rewrite a query
 // that was already built.
-func TestSqlBuilder_CopiesCallerSlices(t *testing.T) {
+func TestBuilder_CopiesCallerSlices(t *testing.T) {
 	t.Parallel()
 	cols := []string{"a", "b"}
+	items := []any{"a", "b"}
 	vals := []any{1, 2}
 
 	tests := []sqlCase{
-		{"select distinct on", newSelect().From("t").DistinctOn(cols...), `SELECT DISTINCT ON ("a", "b") * FROM "t";`},
+		{"select distinct on", newSelect().From("t").DistinctOn(items...), `SELECT DISTINCT ON ("a", "b") * FROM "t";`},
 		{"insert columns and values", newInsert().Into("t").Columns(cols...).Values(vals...), `INSERT INTO "t" ("a", "b") VALUES (1, 2);`},
 		{"insert on conflict", newInsert().Into("t").Values(1).OnConflict(cols...).DoUpdate(`"a" = 1`), `INSERT INTO "t" VALUES (1) ON CONFLICT ("a", "b") DO UPDATE SET "a" = 1;`},
-		{"insert returning", newInsert().Into("t").Values(1).Returning(cols...), `INSERT INTO "t" VALUES (1) RETURNING "a", "b";`},
-		{"update returning", newUpdate().Table("t").Set("a", 1).Returning(cols...), `UPDATE "t" SET "a" = 1 RETURNING "a", "b";`},
-		{"delete returning", newDelete().From("t").Returning(cols...), `DELETE FROM "t" RETURNING "a", "b";`},
+		{"insert returning", newInsert().Into("t").Values(1).Returning(items...), `INSERT INTO "t" VALUES (1) RETURNING "a", "b";`},
+		{"update returning", newUpdate().Table("t").Set("a", 1).Returning(items...), `UPDATE "t" SET "a" = 1 RETURNING "a", "b";`},
+		{"delete returning", newDelete().From("t").Returning(items...), `DELETE FROM "t" RETURNING "a", "b";`},
+		{"create index columns", newCreateIndex().Name("i").On("t").Columns(items...), `CREATE INDEX "i" ON "t" ("a", "b");`},
 		{"create table column constraints", newCreateTable().Table("t").Column("a", "INT", cols...), `CREATE TABLE "t" ("a" INT a b);`},
 		{
 			name: "create table constraints",
@@ -157,6 +187,7 @@ func TestSqlBuilder_CopiesCallerSlices(t *testing.T) {
 		},
 	}
 	cols[0], cols[1] = "x", "y"
+	items[0], items[1] = "x", "y"
 	vals[0], vals[1] = 8, 9
 	runSQLCases(t, tests)
 }

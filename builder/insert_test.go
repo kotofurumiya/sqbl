@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlInsertBuilder_Values(t *testing.T) {
+func TestInsertBuilder_Values(t *testing.T) {
 	t.Parallel()
 	users := newInsert().Into("users").Columns("name", "email")
 
@@ -52,10 +52,15 @@ func TestSqlInsertBuilder_Values(t *testing.T) {
 			b:    users.Values(syntax.P(1), syntax.P(2)).Returning("id", "created_at"),
 			want: `INSERT INTO "users" ("name", "email") VALUES ($1, $2) RETURNING "id", "created_at";`,
 		},
+		{
+			name: "returning star and expressions, replaced by a later call",
+			b:    users.Values(syntax.P(1), syntax.P(2)).Returning("old").Returning("*", syntax.As(syntax.Fn("NOW"), "at")),
+			want: `INSERT INTO "users" ("name", "email") VALUES ($1, $2) RETURNING *, NOW() AS "at";`,
+		},
 	})
 }
 
-func TestSqlInsertBuilder_ConflictHandling(t *testing.T) {
+func TestInsertBuilder_ConflictHandling(t *testing.T) {
 	t.Parallel()
 	tags := newInsert().Into("tags").Columns("name", "count").Values(syntax.P(1), syntax.P(2))
 
@@ -72,15 +77,13 @@ func TestSqlInsertBuilder_ConflictHandling(t *testing.T) {
 			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2) ON CONFLICT ("name") WHERE "active" = TRUE DO NOTHING;`,
 		},
 		{
-			// An index predicate without target columns is invalid SQL.
-			name: "index predicate is dropped without target",
-			b:    tags.OnConflictWhere(syntax.Eq("active", true)).OnConflictDoNothing(),
-			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2) ON CONFLICT DO NOTHING;`,
-		},
-		{
-			name: "target alone renders nothing",
-			b:    tags.OnConflict("name"),
-			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2);`,
+			name: "index predicates accumulate with and",
+			b: tags.OnConflict("name").
+				OnConflictWhere(syntax.Eq("active", true)).OnConflictWhere(nil).OnConflictWhere(syntax.IsNull("deleted_at")).
+				OnConflictDoNothing(),
+			want: `
+				INSERT INTO "tags" ("name", "count") VALUES ($1, $2)
+				ON CONFLICT ("name") WHERE "active" = TRUE AND "deleted_at" IS NULL DO NOTHING;`,
 		},
 		{
 			name: "do update with raw and structured assignments in call order",
@@ -106,9 +109,13 @@ func TestSqlInsertBuilder_ConflictHandling(t *testing.T) {
 				WHERE "tags"."count" < "excluded"."count";`,
 		},
 		{
-			name: "update condition alone renders nothing",
-			b:    tags.OnConflict("name").DoUpdateWhere(syntax.Eq("a", 1)),
-			want: `INSERT INTO "tags" ("name", "count") VALUES ($1, $2);`,
+			name: "update conditions accumulate with and",
+			b: tags.OnConflict("name").DoUpdateSet("count", "excluded.count").
+				DoUpdateWhere(syntax.Gt("excluded.count", 0)).DoUpdateWhere(syntax.Lt("tags.count", "excluded.count")),
+			want: `
+				INSERT INTO "tags" ("name", "count") VALUES ($1, $2)
+				ON CONFLICT ("name") DO UPDATE SET "count" = "excluded"."count"
+				WHERE "excluded"."count" > 0 AND "tags"."count" < "excluded"."count";`,
 		},
 
 		// ON DUPLICATE KEY UPDATE (MySQL)
@@ -130,11 +137,20 @@ func TestSqlInsertBuilder_ConflictHandling(t *testing.T) {
 		{"or rollback", tags.OrRollback(), `INSERT OR ROLLBACK INTO "tags" ("name", "count") VALUES ($1, $2);`},
 		{"later algorithm wins", tags.OrReplace().OrIgnore(), `INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2);`},
 	})
+
+	// An upsert clause that cannot be completed would change what the statement
+	// does if it were dropped, so it fails instead.
+	runErrCases(t, []errCase{
+		{"target without action", tags.OnConflict("name"), "OnConflict needs an action"},
+		{"index predicate without target", tags.OnConflictWhere(syntax.Eq("active", true)).OnConflictDoNothing(), "OnConflictWhere needs conflict target columns"},
+		{"update condition without update", tags.OnConflict("name").OnConflictDoNothing().DoUpdateWhere(syntax.Eq("a", 1)), "DoUpdateWhere needs an update"},
+		{"do nothing with do update", tags.OnConflict("name").OnConflictDoNothing().DoUpdateSet("count", 1), "OnConflictDoNothing cannot be combined"},
+	})
 }
 
-// TestSqlInsertBuilder_AllClauses pins the clause order. sqbl does not validate
+// TestInsertBuilder_AllClauses pins the clause order. sqbl does not validate
 // combinations, so clauses from different databases are rendered side by side.
-func TestSqlInsertBuilder_AllClauses(t *testing.T) {
+func TestInsertBuilder_AllClauses(t *testing.T) {
 	t.Parallel()
 	got := newInsert().
 		Returning("id").
@@ -147,7 +163,7 @@ func TestSqlInsertBuilder_AllClauses(t *testing.T) {
 		Columns("name", "count").
 		Into("tags").
 		OrIgnore().
-		ToSql()
+		MustSQL()
 
 	sqltesting.AssertSQL(t, got, `
 		INSERT OR IGNORE INTO "tags" ("name", "count") VALUES ($1, $2)
@@ -156,11 +172,11 @@ func TestSqlInsertBuilder_AllClauses(t *testing.T) {
 		RETURNING "id";`)
 }
 
-// TestSqlInsertBuilder_BranchIsolation checks that deriving two statements from
+// TestInsertBuilder_BranchIsolation checks that deriving two statements from
 // a shared base does not leak appended rows or assignments between them.
 // The base holds three items per list so that a backing array with spare
 // capacity would be shared if a method appended in place.
-func TestSqlInsertBuilder_BranchIsolation(t *testing.T) {
+func TestInsertBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	base := newInsert().Into("t").
 		Values(1).Values(2).Values(3).
@@ -170,15 +186,15 @@ func TestSqlInsertBuilder_BranchIsolation(t *testing.T) {
 	left := base.Values(4).DoUpdateSet("l", 4).OnDuplicateKeyUpdate(`"l" = 4`)
 	right := base.Values(5).DoUpdate(`"r" = 5`).OnDuplicateKeyUpdateSet("r", 5)
 
-	sqltesting.AssertSQL(t, base.ToSql(), `
+	sqltesting.AssertSQL(t, base.MustSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3;`)
-	sqltesting.AssertSQL(t, left.ToSql(), `
+	sqltesting.AssertSQL(t, left.MustSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3), (4)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "l" = 4
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "l" = 4;`)
-	sqltesting.AssertSQL(t, right.ToSql(), `
+	sqltesting.AssertSQL(t, right.MustSQL(), `
 		INSERT INTO "t" VALUES (1), (2), (3), (5)
 		ON CONFLICT DO UPDATE SET "a" = 1, "b" = 2, "c" = 3, "r" = 5
 		ON DUPLICATE KEY UPDATE "a" = 1, "b" = 2, "c" = 3, "r" = 5;`)

@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-// SqliteDialect implements the Dialect interface for SQLite.
-type SqliteDialect struct{}
+// SQLite implements the Dialect interface for SQLite.
+type SQLite struct{}
 
-var _ SqlDialect = &SqliteDialect{}
+var _ Dialect = &SQLite{}
 
 // Quote writes a single identifier part wrapped in double quotes into buf.
 // Any existing double-quote characters within the identifier are escaped by doubling.
@@ -18,7 +18,7 @@ var _ SqlDialect = &SqliteDialect{}
 //
 //	users      -> "users"
 //	my"table   -> "my""table"
-func (s *SqliteDialect) Quote(buf *bytes.Buffer, str string) {
+func (s *SQLite) Quote(buf *bytes.Buffer, str string) {
 	if strings.IndexByte(str, '"') < 0 {
 		buf.WriteByte('"')
 		buf.WriteString(str)
@@ -36,7 +36,7 @@ func (s *SqliteDialect) Quote(buf *bytes.Buffer, str string) {
 //	users          -> "users"
 //	main.users     -> "main"."users"
 //	db.sch.table   -> "db"."sch"."table"
-func (s *SqliteDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
+func (s *SQLite) QuoteIdentifier(buf *bytes.Buffer, name string) {
 	if strings.IndexByte(name, '.') < 0 {
 		s.Quote(buf, name)
 		return
@@ -45,7 +45,7 @@ func (s *SqliteDialect) QuoteIdentifier(buf *bytes.Buffer, name string) {
 }
 
 // PlaceholderPositional writes the positional bind parameter "?" into buf.
-func (s *SqliteDialect) PlaceholderPositional(buf *bytes.Buffer) {
+func (s *SQLite) PlaceholderPositional(buf *bytes.Buffer) {
 	buf.WriteByte('?')
 }
 
@@ -56,7 +56,7 @@ func (s *SqliteDialect) PlaceholderPositional(buf *bytes.Buffer) {
 // Examples:
 //
 //	1 -> ?1, 2 -> ?2
-func (s *SqliteDialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
+func (s *SQLite) PlaceholderIndexed(buf *bytes.Buffer, index int) {
 	buf.WriteByte('?')
 	buf.WriteString(strconv.Itoa(index))
 }
@@ -67,7 +67,7 @@ func (s *SqliteDialect) PlaceholderIndexed(buf *bytes.Buffer, index int) {
 // Examples:
 //
 //	true -> 1, false -> 0
-func (s *SqliteDialect) Bool(buf *bytes.Buffer, b bool) {
+func (s *SQLite) Bool(buf *bytes.Buffer, b bool) {
 	if b {
 		buf.WriteByte('1')
 	} else {

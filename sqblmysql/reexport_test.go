@@ -16,7 +16,7 @@ func TestReexports(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		f    syntax.SqlFragment
+		f    syntax.SQLFragment
 		want string
 	}{
 		{"As", sqblmysql.As("users", "u"), "`users` AS `u`"},
@@ -31,6 +31,7 @@ func TestReexports(t *testing.T) {
 		{"Or", sqblmysql.Or(sqblmysql.Eq("a", 1), sqblmysql.Eq("b", 2)), "`a` = 1 OR `b` = 2"},
 		{"Asc", sqblmysql.Asc("a"), "`a` ASC"},
 		{"Desc", sqblmysql.Desc("a"), "`a` DESC"},
+		{"Desc expression", sqblmysql.Desc(sqblmysql.Fn("LOWER", "a")), "LOWER(`a`) DESC"},
 		{"Not", sqblmysql.Not(sqblmysql.Eq("a", 1)), "NOT (`a` = 1)"},
 		{"In", sqblmysql.In("a", 1, 2), "`a` IN (1, 2)"},
 		{"NotIn", sqblmysql.NotIn("a", 1, 2), "`a` NOT IN (1, 2)"},
@@ -47,7 +48,7 @@ func TestReexports(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var buf bytes.Buffer
-			tt.f.AppendSQL(&buf, &dialect.MysqlDialect{})
+			tt.f.AppendSQL(&buf, &dialect.MySQL{})
 			sqltesting.AssertSQL(t, buf.String(), tt.want)
 		})
 	}

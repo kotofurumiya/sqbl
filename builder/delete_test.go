@@ -6,7 +6,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlDeleteBuilder_Clauses(t *testing.T) {
+func TestDeleteBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	sessions := newDelete().From("sessions")
 
@@ -22,11 +22,12 @@ func TestSqlDeleteBuilder_Clauses(t *testing.T) {
 			want: `DELETE FROM "sessions" WHERE "expires_at" < $1 RETURNING "id", "user_id";`,
 		},
 		{
-			name: "where and returning are replaced by later calls",
+			// Each Where narrows the delete further; Returning is replaced.
+			name: "where accumulates with and while returning is replaced",
 			b: sessions.
-				Where(syntax.Eq("old", 1)).Where(syntax.Eq("id", syntax.P(1))).
-				Returning("old").Returning("id"),
-			want: `DELETE FROM "sessions" WHERE "id" = $1 RETURNING "id";`,
+				Where(syntax.Eq("user_id", syntax.P(1))).Where(nil).Where(syntax.Lt("expires_at", syntax.P(2))).
+				Returning("old").Returning("*"),
+			want: `DELETE FROM "sessions" WHERE "user_id" = $1 AND "expires_at" < $2 RETURNING *;`,
 		},
 	})
 }

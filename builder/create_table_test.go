@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
-func TestSqlCreateTableBuilder_Clauses(t *testing.T) {
+func TestCreateTableBuilder_Clauses(t *testing.T) {
 	t.Parallel()
 	users := newCreateTable().Table("users").Column("id", "BIGINT")
 
@@ -64,11 +64,11 @@ func TestSqlCreateTableBuilder_Clauses(t *testing.T) {
 	})
 }
 
-// TestSqlCreateTableBuilder_BranchIsolation checks that deriving two statements
+// TestCreateTableBuilder_BranchIsolation checks that deriving two statements
 // from a shared base does not leak columns, constraints, or options between them.
 // The base holds three items per list so that a backing array with spare
 // capacity would be shared if a method appended in place.
-func TestSqlCreateTableBuilder_BranchIsolation(t *testing.T) {
+func TestCreateTableBuilder_BranchIsolation(t *testing.T) {
 	t.Parallel()
 	base := newCreateTable().Table("t").
 		Column("a", "INT").Column("b", "INT").Column("c", "INT").
@@ -78,12 +78,12 @@ func TestSqlCreateTableBuilder_BranchIsolation(t *testing.T) {
 	left := base.Column("l", "INT").PrimaryKey("l").Options("L")
 	right := base.Column("r", "INT").Check(syntax.Gt("r", 0)).Options("R")
 
-	sqltesting.AssertSQL(t, base.ToSql(), `
+	sqltesting.AssertSQL(t, base.MustSQL(), `
 		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c")) A B C;`)
-	sqltesting.AssertSQL(t, left.ToSql(), `
+	sqltesting.AssertSQL(t, left.MustSQL(), `
 		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, "l" INT,
 		UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c"), PRIMARY KEY ("l")) A B C L;`)
-	sqltesting.AssertSQL(t, right.ToSql(), `
+	sqltesting.AssertSQL(t, right.MustSQL(), `
 		CREATE TABLE "t" ("a" INT, "b" INT, "c" INT, "r" INT,
 		UNIQUE ("a"), UNIQUE ("b"), UNIQUE ("c"), CHECK ("r" > 0)) A B C R;`)
 }

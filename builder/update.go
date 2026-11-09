@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
-	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 	"github.com/kotofurumiya/sqbl/syntax"
 )
 
@@ -15,55 +14,50 @@ type setClause struct {
 	Val any
 }
 
-var _ syntax.SqlFragment = setClause{}
+var _ syntax.SQLFragment = setClause{}
 
-// AppendSQL implements syntax.SqlFragment, writing "col" = val into buf.
-func (s setClause) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+// AppendSQL implements syntax.SQLFragment, writing "col" = val into buf.
+func (s setClause) AppendSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	d.QuoteIdentifier(buf, s.Col)
 	buf.WriteString(" = ")
 	syntax.AppendValue(buf, d, s.Val)
 }
 
-// SqlUpdateBuilder constructs a SQL UPDATE statement using a fluent method chain.
+// UpdateBuilder constructs a SQL UPDATE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.Update) to create an instance.
 //
 //	q := sqblpg.Update("users").
-//	    Set("name", sqbl.P(1)).
-//	    Set("email", sqbl.P(2)).
-//	    Where(sqblpg.Eq("id", sqbl.P(3)))
-//	sql := q.ToSql()
-type SqlUpdateBuilder struct {
-	dialect   dialect.SqlDialect
+//	    Set("name", sqblpg.P(1)).
+//	    Set("email", sqblpg.P(2)).
+//	    Where(sqblpg.Eq("id", sqblpg.P(3)))
+//	sql, err := q.ToSQL()
+type UpdateBuilder struct {
+	dialect   dialect.Dialect
 	table     string
 	sets      []setClause
-	where     syntax.SqlFragment
-	returning []string
+	where     []syntax.SQLFragment // ANDed
+	returning []any
 }
 
-var _ SqlBuilder = SqlUpdateBuilder{}
+var _ Statement = UpdateBuilder{}
 
-// ToSql renders the UPDATE statement with a trailing semicolon.
-func (b SqlUpdateBuilder) ToSql() string {
-	d := requireDialect(b.dialect)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	buf.WriteByte(';')
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// ToSQL renders the statement with the builder's dialect and a trailing semicolon.
+func (b UpdateBuilder) ToSQL() (string, error) { return render(b, b.dialect, true) }
+
+// ToSQLWithDialect renders the statement with d and no trailing semicolon.
+func (b UpdateBuilder) ToSQLWithDialect(d dialect.Dialect) (string, error) {
+	return render(b, d, false)
 }
 
-// ToSqlWithDialect renders the UPDATE statement using the given dialect, without a trailing semicolon.
-func (b SqlUpdateBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	requireDialect(d)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// MustSQL is like ToSQL but panics on error.
+func (b UpdateBuilder) MustSQL() string { return must(b.ToSQL()) }
+
+// MustSQLWithDialect is like ToSQLWithDialect but panics on error.
+func (b UpdateBuilder) MustSQLWithDialect(d dialect.Dialect) string {
+	return must(b.ToSQLWithDialect(d))
 }
 
-func (b SqlUpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b UpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	// UPDATE table
 	buf.WriteString("UPDATE")
 	if b.table != "" {
@@ -82,26 +76,16 @@ func (b SqlUpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 		}
 	}
 
-	// WHERE condition
-	if b.where != nil {
-		buf.WriteString(" WHERE ")
-		b.where.AppendSQL(buf, d)
-	}
+	writeConditions(buf, d, " WHERE ", b.where)
 
-	// RETURNING col1, col2, ...
 	if len(b.returning) > 0 {
 		buf.WriteString(" RETURNING ")
-		for i, col := range b.returning {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			d.QuoteIdentifier(buf, col)
-		}
+		writeValues(buf, d, b.returning)
 	}
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlUpdateBuilder) Dialect(d dialect.SqlDialect) SqlUpdateBuilder {
+func (b UpdateBuilder) Dialect(d dialect.Dialect) UpdateBuilder {
 	b.dialect = d
 	return b
 }
@@ -109,7 +93,7 @@ func (b SqlUpdateBuilder) Dialect(d dialect.SqlDialect) SqlUpdateBuilder {
 // Table sets the target table for the UPDATE statement.
 //
 //	b.Table("users")
-func (b SqlUpdateBuilder) Table(table string) SqlUpdateBuilder {
+func (b UpdateBuilder) Table(table string) UpdateBuilder {
 	b.table = table
 	return b
 }
@@ -119,27 +103,30 @@ func (b SqlUpdateBuilder) Table(table string) SqlUpdateBuilder {
 // The value accepts the same values as syntax.AppendValue, so a plain string
 // is an identifier; use syntax.Raw for an expression.
 //
-//	b.Set("name", sqbl.P(1)).Set("email", sqbl.P(2))
-//	b.Set("count", sqbl.Raw(`"count" + 1`))
+//	b.Set("name", sqblpg.P(1)).Set("email", sqblpg.P(2))
+//	b.Set("count", sqblpg.Raw(`"count" + 1`))
 //	b.Set("deleted_at", nil) // "deleted_at" = NULL
-func (b SqlUpdateBuilder) Set(col string, val any) SqlUpdateBuilder {
+func (b UpdateBuilder) Set(col string, val any) UpdateBuilder {
 	b.sets = append(append([]setClause(nil), b.sets...), setClause{Col: col, Val: val})
 	return b
 }
 
-// Where sets the WHERE condition.
+// Where adds a WHERE condition.
+// Calling Where again ANDs the new condition with the earlier ones; nil is ignored.
+// Without any condition, every row is updated.
 //
-//	b.Where(sqblpg.Eq("id", sqbl.P(1)))
-func (b SqlUpdateBuilder) Where(expr syntax.SqlFragment) SqlUpdateBuilder {
-	b.where = expr
+//	b.Where(sqblpg.Eq("id", sqblpg.P(1)))
+func (b UpdateBuilder) Where(expr syntax.SQLFragment) UpdateBuilder {
+	b.where = addCondition(b.where, expr)
 	return b
 }
 
-// Returning adds a RETURNING clause to the UPDATE statement.
-// The specified columns are returned for each updated row.
+// Returning sets the RETURNING list, replacing any earlier list.
+// Each item follows the rules of syntax.AppendValue, so "*" returns every column.
+// Supported by PostgreSQL, SQLite 3.35+, and MariaDB 10.5+.
 //
-//	sqblpg.Update("users").Set("name", sqbl.P(1)).Where(...).Returning("id", "name")
-func (b SqlUpdateBuilder) Returning(cols ...string) SqlUpdateBuilder {
+//	sqblpg.Update("users").Set("name", sqblpg.P(1)).Where(sqblpg.Eq("id", sqblpg.P(2))).Returning("id", "name")
+func (b UpdateBuilder) Returning(cols ...any) UpdateBuilder {
 	b.returning = slices.Clone(cols)
 	return b
 }

@@ -4,44 +4,38 @@ import (
 	"bytes"
 
 	"github.com/kotofurumiya/sqbl/dialect"
-	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
 )
 
-// SqlCreateDatabaseBuilder constructs a CREATE DATABASE statement using a fluent method chain.
+// CreateDatabaseBuilder constructs a CREATE DATABASE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.CreateDatabase) to create an instance.
 //
 //	sqblpg.CreateDatabase("app_test")
 //	sqblmysql.CreateDatabase("app_test").IfNotExists()
-type SqlCreateDatabaseBuilder struct {
-	dialect     dialect.SqlDialect
+type CreateDatabaseBuilder struct {
+	dialect     dialect.Dialect
 	name        string
 	ifNotExists bool
 }
 
-var _ SqlBuilder = SqlCreateDatabaseBuilder{}
+var _ Statement = CreateDatabaseBuilder{}
 
-// ToSql renders the CREATE DATABASE statement with a trailing semicolon.
-func (b SqlCreateDatabaseBuilder) ToSql() string {
-	d := requireDialect(b.dialect)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	buf.WriteByte(';')
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// ToSQL renders the statement with the builder's dialect and a trailing semicolon.
+func (b CreateDatabaseBuilder) ToSQL() (string, error) { return render(b, b.dialect, true) }
+
+// ToSQLWithDialect renders the statement with d and no trailing semicolon.
+func (b CreateDatabaseBuilder) ToSQLWithDialect(d dialect.Dialect) (string, error) {
+	return render(b, d, false)
 }
 
-// ToSqlWithDialect renders the CREATE DATABASE statement using the given dialect, without a trailing semicolon.
-func (b SqlCreateDatabaseBuilder) ToSqlWithDialect(d dialect.SqlDialect) string {
-	requireDialect(d)
-	buf := sqlbuf.GetStringBuffer()
-	b.renderSQL(buf, d)
-	s := buf.String()
-	sqlbuf.PutStringBuffer(buf)
-	return s
+// MustSQL is like ToSQL but panics on error.
+func (b CreateDatabaseBuilder) MustSQL() string { return must(b.ToSQL()) }
+
+// MustSQLWithDialect is like ToSQLWithDialect but panics on error.
+func (b CreateDatabaseBuilder) MustSQLWithDialect(d dialect.Dialect) string {
+	return must(b.ToSQLWithDialect(d))
 }
 
-func (b SqlCreateDatabaseBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+func (b CreateDatabaseBuilder) renderSQL(buf *bytes.Buffer, d dialect.Dialect) {
 	buf.WriteString("CREATE DATABASE")
 	if b.ifNotExists {
 		buf.WriteString(" IF NOT EXISTS")
@@ -53,13 +47,13 @@ func (b SqlCreateDatabaseBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDial
 }
 
 // Dialect sets the SQL dialect used when rendering the query.
-func (b SqlCreateDatabaseBuilder) Dialect(d dialect.SqlDialect) SqlCreateDatabaseBuilder {
+func (b CreateDatabaseBuilder) Dialect(d dialect.Dialect) CreateDatabaseBuilder {
 	b.dialect = d
 	return b
 }
 
 // Name sets the database name. It is quoted as a single identifier.
-func (b SqlCreateDatabaseBuilder) Name(name string) SqlCreateDatabaseBuilder {
+func (b CreateDatabaseBuilder) Name(name string) CreateDatabaseBuilder {
 	b.name = name
 	return b
 }
@@ -68,7 +62,7 @@ func (b SqlCreateDatabaseBuilder) Name(name string) SqlCreateDatabaseBuilder {
 //
 //	sqblmysql.CreateDatabase("app_test").IfNotExists()
 //	// CREATE DATABASE IF NOT EXISTS `app_test`
-func (b SqlCreateDatabaseBuilder) IfNotExists() SqlCreateDatabaseBuilder {
+func (b CreateDatabaseBuilder) IfNotExists() CreateDatabaseBuilder {
 	b.ifNotExists = true
 	return b
 }
