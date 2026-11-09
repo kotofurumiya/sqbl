@@ -3,6 +3,7 @@ package syntax
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/kotofurumiya/sqbl/dialect"
@@ -104,19 +105,33 @@ func AppendValue(buf *bytes.Buffer, d dialect.SqlDialect, v any) {
 	}
 }
 
-// Aliased represents an expression with an AS alias (e.g. "users" AS "u").
+// Aliased represents an expression with an AS alias (e.g. "users" AS "u"),
+// optionally followed by column aliases (e.g. "ids" ("id")).
 type Aliased struct {
-	Source SqlFragment // StringSource | *SqlSelectBuilder
-	Alias  string
+	Source  SqlFragment
+	Alias   string
+	Columns []string
 }
 
 var _ SqlFragment = Aliased{}
 
-// AppendSQL implements SqlFragment, writing the source followed by AS alias into buf.
+// AppendSQL implements SqlFragment, writing the source followed by AS alias
+// and any column aliases into buf.
 func (a Aliased) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	a.Source.AppendSQL(buf, d)
 	buf.WriteString(" AS ")
 	d.Quote(buf, a.Alias)
+	if len(a.Columns) == 0 {
+		return
+	}
+	buf.WriteString(" (")
+	for i, col := range a.Columns {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		d.Quote(buf, col)
+	}
+	buf.WriteByte(')')
 }
 
 // Order represents an ORDER BY expression with a direction.
@@ -157,4 +172,14 @@ func Desc(col string) Order {
 //	syntax.As(subquery, "sub")                              // (SELECT ...) AS "sub"
 func As(source any, alias string) Aliased {
 	return Aliased{Source: ToFragment(source), Alias: alias}
+}
+
+// AsColumns creates a table alias with column aliases, for naming the columns
+// of a function call, VALUES list, or subquery used in From() or Join().
+// The alias and each column are quoted as single identifiers.
+// SQLite does not support column aliases.
+//
+//	syntax.AsColumns(syntax.Fn("unnest", syntax.P(1)), "ids", "id") // unnest($1) AS "ids" ("id")
+func AsColumns(source any, alias string, columns ...string) Aliased {
+	return Aliased{Source: ToFragment(source), Alias: alias, Columns: slices.Clone(columns)}
 }

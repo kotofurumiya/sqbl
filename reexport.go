@@ -24,6 +24,13 @@ func As(source any, alias string) syntax.Aliased {
 	return syntax.As(source, alias)
 }
 
+// AsColumns creates a table alias with column aliases for use in From() or Join().
+//
+//	sqbl.AsColumns(sqbl.Fn("unnest", sqbl.P(1)), "ids", "id") // unnest(<param>) AS ids (id)
+func AsColumns(source any, alias string, columns ...string) syntax.Aliased {
+	return syntax.AsColumns(source, alias, columns...)
+}
+
 // Eq returns a = comparison expression.
 //
 //	sqbl.Eq("status", sqbl.P(1)) // status = <param>
@@ -166,7 +173,7 @@ func ILike(left any, pattern any) syntax.ComparisonExpr {
 // P creates a bind parameter placeholder.
 //
 //	sqbl.P()          → positional: ?
-//	sqbl.P(1)         → indexed:    $1 (PostgreSQL), ? (MySQL, SQLite)
+//	sqbl.P(1)         → indexed:    $1 (PostgreSQL), ?1 (SQLite), ? (MySQL)
 //	sqbl.P(":status") → named:      :status
 func P(args ...any) syntax.Parameter {
 	return syntax.P(args...)
@@ -179,6 +186,13 @@ func P(args ...any) syntax.Parameter {
 //	sqbl.Fn("COALESCE", "x", sqbl.P(1)) // COALESCE(x, <param>)
 func Fn(name string, args ...any) syntax.SqlFn {
 	return syntax.Fn(name, args...)
+}
+
+// Cast creates a CAST(expr AS type) expression. The type is written as-is.
+//
+//	sqbl.Cast(sqbl.P(1), "BIGINT") // CAST(<param> AS BIGINT)
+func Cast(expr any, typ string) syntax.CastExpr {
+	return syntax.Cast(expr, typ)
 }
 
 // Over wraps an expression with a window OVER clause.

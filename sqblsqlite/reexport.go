@@ -157,7 +157,7 @@ func Like(left any, pattern any) syntax.ComparisonExpr {
 // P creates a bind parameter placeholder.
 //
 //	sqblsqlite.P()          → positional: ?
-//	sqblsqlite.P(1)         → indexed:    ?
+//	sqblsqlite.P(1)         → indexed:    ?1
 //	sqblsqlite.P(":status") → named:      :status
 func P(args ...any) syntax.Parameter {
 	return syntax.P(args...)
@@ -169,6 +169,13 @@ func P(args ...any) syntax.Parameter {
 //	sqblsqlite.Fn("COUNT", "*")      // COUNT(*)
 func Fn(name string, args ...any) syntax.SqlFn {
 	return syntax.Fn(name, args...)
+}
+
+// Cast creates a CAST(expr AS type) expression. The type is written as-is.
+//
+//	sqblsqlite.Cast(sqblsqlite.P(1), "BIGINT") // CAST(<param> AS BIGINT)
+func Cast(expr any, typ string) syntax.CastExpr {
+	return syntax.Cast(expr, typ)
 }
 
 // Over wraps an expression with a window OVER clause.

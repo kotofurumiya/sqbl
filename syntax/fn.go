@@ -41,3 +41,30 @@ func (f SqlFn) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	}
 	buf.WriteByte(')')
 }
+
+// CastExpr represents a type conversion: CAST(expr AS type).
+type CastExpr struct {
+	expr SqlFragment
+	typ  string
+}
+
+var _ SqlFragment = CastExpr{}
+
+// Cast creates a CAST(expr AS type) expression.
+// The expression accepts the same values as AppendValue, so a plain string is
+// an identifier. The type is written as-is.
+//
+//	Cast(P(1), "bigint[]") → CAST($1 AS bigint[])
+//	Cast("price", "TEXT")  → CAST("price" AS TEXT)
+func Cast(expr any, typ string) CastExpr {
+	return CastExpr{expr: ToFragment(expr), typ: typ}
+}
+
+// AppendSQL implements SqlFragment, writing the CAST expression into buf.
+func (c CastExpr) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	buf.WriteString("CAST(")
+	c.expr.AppendSQL(buf, d)
+	buf.WriteString(" AS ")
+	buf.WriteString(c.typ)
+	buf.WriteByte(')')
+}

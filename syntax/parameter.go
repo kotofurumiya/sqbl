@@ -44,7 +44,7 @@ func (p Parameter) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 // P creates a Parameter placeholder.
 //
 //	P()          → positional: ? (all dialects)
-//	P(1)         → indexed:    $1 (PostgreSQL), ? (MySQL/SQLite)
+//	P(1)         → indexed:    $1 (PostgreSQL), ?1 (SQLite), ? (MySQL)
 //	P(":status") → named:      :status (as-is, all dialects)
 //	P("@name")   → named:      @name (as-is, all dialects)
 func P(args ...any) Parameter {

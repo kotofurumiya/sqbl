@@ -29,6 +29,26 @@ func TestReexports(t *testing.T) {
 		}
 	})
 
+	t.Run("AsColumns", func(t *testing.T) {
+		t.Parallel()
+		var got, want bytes.Buffer
+		AsColumns("ids", "i", "id").AppendSQL(&got, d)
+		syntax.AsColumns("ids", "i", "id").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("AsColumns: got %q, want %q", got.String(), want.String())
+		}
+	})
+
+	t.Run("Cast", func(t *testing.T) {
+		t.Parallel()
+		var got, want bytes.Buffer
+		Cast("price", "TEXT").AppendSQL(&got, d)
+		syntax.Cast("price", "TEXT").AppendSQL(&want, d)
+		if got.String() != want.String() {
+			t.Errorf("Cast: got %q, want %q", got.String(), want.String())
+		}
+	})
+
 	t.Run("Eq", func(t *testing.T) {
 		t.Parallel()
 		var got, want bytes.Buffer

@@ -120,3 +120,28 @@ func TestFn_AsFragment(t *testing.T) {
 		t.Errorf("As(Fn(...), alias).AppendSQL() = %q; want %q", got, want)
 	}
 }
+
+func TestCast(t *testing.T) {
+	t.Parallel()
+	d := &dialect.PostgresDialect{}
+
+	tests := []struct {
+		name string
+		expr CastExpr
+		want string
+	}{
+		{name: "parameter", expr: Cast(P(1), "bigint[]"), want: `CAST($1 AS bigint[])`},
+		{name: "identifier", expr: Cast("price", "TEXT"), want: `CAST("price" AS TEXT)`},
+		{name: "nested in function", expr: Cast(Fn("NOW"), "DATE"), want: `CAST(NOW() AS DATE)`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			tt.expr.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("Cast.AppendSQL() = %q; want %q", got, tt.want)
+			}
+		})
+	}
+}

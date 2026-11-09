@@ -371,7 +371,7 @@ func TestSqlInsertBuilder_OrReplace(t *testing.T) {
 		Values(syntax.P(1), syntax.P(2)).
 		OrReplace().
 		ToSql()
-	want := `INSERT OR REPLACE INTO "users" ("id", "name") VALUES (?, ?);`
+	want := `INSERT OR REPLACE INTO "users" ("id", "name") VALUES (?1, ?2);`
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}
@@ -386,7 +386,7 @@ func TestSqlInsertBuilder_OrIgnore(t *testing.T) {
 		Values(syntax.P(1)).
 		OrIgnore().
 		ToSql()
-	want := `INSERT OR IGNORE INTO "tags" ("name") VALUES (?);`
+	want := `INSERT OR IGNORE INTO "tags" ("name") VALUES (?1);`
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}
@@ -401,7 +401,7 @@ func TestSqlInsertBuilder_SQLiteReturning(t *testing.T) {
 		Values(syntax.P(1)).
 		Returning("id").
 		ToSql()
-	want := `INSERT INTO "users" ("name") VALUES (?) RETURNING "id";`
+	want := `INSERT INTO "users" ("name") VALUES (?1) RETURNING "id";`
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}

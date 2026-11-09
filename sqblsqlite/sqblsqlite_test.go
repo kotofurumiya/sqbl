@@ -265,7 +265,7 @@ func TestSqblSqlite_EntryPoints(t *testing.T) {
 			Values(syntax.P(1), syntax.P(2)).
 			OrReplace().
 			ToSql()
-		want := `INSERT OR REPLACE INTO "users" ("id", "name") VALUES (?, ?);`
+		want := `INSERT OR REPLACE INTO "users" ("id", "name") VALUES (?1, ?2);`
 		if got != want {
 			t.Errorf("OrReplace: got %q, want %q", got, want)
 		}
@@ -278,7 +278,7 @@ func TestSqblSqlite_EntryPoints(t *testing.T) {
 			Values(syntax.P(1)).
 			OrIgnore().
 			ToSql()
-		want := `INSERT OR IGNORE INTO "tags" ("name") VALUES (?);`
+		want := `INSERT OR IGNORE INTO "tags" ("name") VALUES (?1);`
 		if got != want {
 			t.Errorf("OrIgnore: got %q, want %q", got, want)
 		}

@@ -354,3 +354,75 @@ func TestSQLite_ReturningAndOrConflict(t *testing.T) {
 		t.Errorf("RETURNING: got (%q, %q); want (%q, %q)", retKey, retVal, "lang", "go")
 	}
 }
+
+func TestSQLite_IndexedParameters(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	ctx := context.Background()
+	a := adapt(db)
+
+	if err := a.Exec(ctx, `
+		CREATE TEMPORARY TABLE users (
+			id         INTEGER NOT NULL PRIMARY KEY,
+			name       TEXT    NOT NULL,
+			created_at TEXT    NOT NULL,
+			updated_at TEXT    NOT NULL
+		)
+	`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	// The same index appears twice, and indexes appear out of order.
+	if err := a.Exec(ctx,
+		defaultSuite.InsertInto("users").
+			Columns("id", "name", "created_at", "updated_at").
+			Values(sqblsqlite.P(3), sqblsqlite.P(2), sqblsqlite.P(1), sqblsqlite.P(1)).
+			ToSql(),
+		"2026-01-01", "alice", 1,
+	); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	var id int
+	var name, createdAt, updatedAt string
+	if err := a.QueryRow(ctx,
+		defaultSuite.From("users").Select("id", "name", "created_at", "updated_at").ToSql(),
+	).Scan(&id, &name, &createdAt, &updatedAt); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if id != 1 || name != "alice" || createdAt != "2026-01-01" || updatedAt != "2026-01-01" {
+		t.Errorf("got (%d, %q, %q, %q); want (1, %q, %q, %q)",
+			id, name, createdAt, updatedAt, "alice", "2026-01-01", "2026-01-01")
+	}
+}
+
+func TestSQLite_CreateTable_Strict(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	ctx := context.Background()
+	a := adapt(db)
+
+	if err := a.Exec(ctx,
+		defaultSuite.CreateTable("counters").
+			Column("id", "INTEGER", "PRIMARY KEY").
+			Column("hits", "INTEGER", "NOT NULL").
+			Options("STRICT, WITHOUT ROWID").
+			ToSql(),
+	); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := a.Exec(ctx, defaultSuite.DropTable("counters").ToSql()); err != nil {
+			t.Errorf("drop table: %v", err)
+		}
+	})
+
+	// A STRICT table rejects a value that does not match the column type.
+	err := a.Exec(ctx,
+		defaultSuite.InsertInto("counters").Columns("id", "hits").Values(sqblsqlite.P(1), sqblsqlite.P(2)).ToSql(),
+		1, "many",
+	)
+	if err == nil {
+		t.Fatal("insert of TEXT into a STRICT INTEGER column succeeded; want an error")
+	}
+}

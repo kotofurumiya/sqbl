@@ -109,7 +109,7 @@ import (
 q := sqbl.From("users").Select("id").Where(sqbl.Eq("id", sqbl.P(1)))
 
 q.ToSqlWithDialect(&dialect.PostgresDialect{}) // SELECT "id" FROM "users" WHERE "id" = $1
-q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?
+q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?1
 ```
 
 - Builders from the root package have no dialect, so `ToSql()` panics on them.

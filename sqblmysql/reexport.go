@@ -24,6 +24,13 @@ func As(source any, alias string) syntax.Aliased {
 	return syntax.As(source, alias)
 }
 
+// AsColumns creates a table alias with column aliases for use in From() or Join().
+//
+//	sqblmysql.AsColumns(sqblmysql.Fn("unnest", sqblmysql.P(1)), "ids", "id") // unnest(<param>) AS ids (id)
+func AsColumns(source any, alias string, columns ...string) syntax.Aliased {
+	return syntax.AsColumns(source, alias, columns...)
+}
+
 // Eq returns a = comparison expression.
 //
 //	sqblmysql.Eq("status", sqblmysql.P(1)) // status = <param>
@@ -169,6 +176,13 @@ func P(args ...any) syntax.Parameter {
 //	sqblmysql.Fn("COUNT", "*")      // COUNT(*)
 func Fn(name string, args ...any) syntax.SqlFn {
 	return syntax.Fn(name, args...)
+}
+
+// Cast creates a CAST(expr AS type) expression. The type is written as-is.
+//
+//	sqblmysql.Cast(sqblmysql.P(1), "BIGINT") // CAST(<param> AS BIGINT)
+func Cast(expr any, typ string) syntax.CastExpr {
+	return syntax.Cast(expr, typ)
 }
 
 // Over wraps an expression with a window OVER clause.

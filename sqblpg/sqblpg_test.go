@@ -341,6 +341,24 @@ func TestSqbl_EntryPoints(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateDatabase", func(t *testing.T) {
+		t.Parallel()
+		got := CreateDatabase("app_test").ToSql()
+		want := `CREATE DATABASE "app_test";`
+		if got != want {
+			t.Errorf("CreateDatabase: got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("DropDatabase", func(t *testing.T) {
+		t.Parallel()
+		got := DropDatabase("app_test").IfExists().ToSql()
+		want := `DROP DATABASE IF EXISTS "app_test";`
+		if got != want {
+			t.Errorf("DropDatabase: got %q, want %q", got, want)
+		}
+	})
+
 	t.Run("DropIndex", func(t *testing.T) {
 		t.Parallel()
 		got := DropIndex("idx_users_email").IfExists().ToSql()

@@ -46,8 +46,9 @@ Key types:
 
 - `Ident` — an identifier, quoted via `QuoteIdentifier`; a plain string is treated the same way
 - `Raw` — SQL text written as-is
-- `Aliased` — `<source> AS <alias>`
+- `Aliased` — `<source> AS <alias>`, optionally followed by column aliases (`AS ids (id)`)
 - `SqlFn` — a function call such as `SUM("amount")` or `COUNT(*)`
+- `CastExpr` — a type conversion such as `CAST($1 AS bigint[])`
 - `WindowExpr` — a window function expression (`expr OVER (PARTITION BY ... ORDER BY ...)`)
 - `Parameter` — a bind parameter placeholder (`?`, `$N`, `:name`, `@name`)
 - Condition types: `ComparisonExpr`, `LogicalExpr`, `NotExpr`, `InExpr`, `NullExpr`, `BetweenExpr`
@@ -82,7 +83,7 @@ Both panic when there is no dialect to render with: `ToSql()` on a builder witho
 
 State is accumulated independently of method call order and rendered at the end by a single `renderSQL` pass. `Select(...).From(...)` and `From(...).Select(...)` produce identical output.
 
-Builders: `SqlSelectBuilder`, `SqlInsertBuilder`, `SqlUpdateBuilder`, `SqlDeleteBuilder`, `SqlCreateTableBuilder`, `SqlCreateIndexBuilder`, `SqlDropTableBuilder`, `SqlDropIndexBuilder`, `SqlAlterTableBuilder`.
+Builders: `SqlSelectBuilder`, `SqlInsertBuilder`, `SqlUpdateBuilder`, `SqlDeleteBuilder`, `SqlCreateTableBuilder`, `SqlCreateIndexBuilder`, `SqlDropTableBuilder`, `SqlDropIndexBuilder`, `SqlAlterTableBuilder`, `SqlCreateDatabaseBuilder`, `SqlDropDatabaseBuilder`.
 
 ---
 
@@ -100,4 +101,4 @@ Dialect-free entry points for code that targets several databases.
 Convenience packages. Each has two files:
 
 - `sqblXXX.go` — entry point functions (`From`, `Select`, `InsertInto`, `Update`, `DeleteFrom`, `CreateTable`, etc.) that wire the appropriate dialect and return a typed builder
-- `reexport.go` — re-exports `syntax` helpers (`Eq`, `And`, `In`, `Asc`, `P`, `Fn`, `Over`, etc.) so users only need to import one package; DB-specific functions are intentionally omitted where not applicable (e.g. `ILike` is only in `sqblpg`)
+- `reexport.go` — re-exports `syntax` helpers (`Eq`, `And`, `In`, `Asc`, `P`, `Fn`, `Over`, etc.) so users only need to import one package; DB-specific functions are intentionally omitted where not applicable (e.g. `ILike` is only in `sqblpg`, and `sqblsqlite` has no `AsColumns`, `CreateDatabase`, or `DropDatabase`)

@@ -20,7 +20,7 @@ func TestDialectFree_RendersPerDialect(t *testing.T) {
 	}{
 		{name: "PostgreSQL", d: &dialect.PostgresDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = $1`},
 		{name: "MySQL", d: &dialect.MysqlDialect{}, want: "SELECT `id` FROM `users` WHERE `id` = ?"},
-		{name: "SQLite", d: &dialect.SqliteDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = ?`},
+		{name: "SQLite", d: &dialect.SqliteDialect{}, want: `SELECT "id" FROM "users" WHERE "id" = ?1`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,6 +50,8 @@ func TestDialectFree_EntryPoints(t *testing.T) {
 		{name: "DropTable", b: sqbl.DropTable("users"), want: `DROP TABLE "users"`},
 		{name: "DropIndex", b: sqbl.DropIndex("idx"), want: `DROP INDEX "idx"`},
 		{name: "AlterTable", b: sqbl.AlterTable("users").AddColumn("bio", "TEXT"), want: `ALTER TABLE "users" ADD COLUMN "bio" TEXT`},
+		{name: "CreateDatabase", b: sqbl.CreateDatabase("app_test"), want: `CREATE DATABASE "app_test"`},
+		{name: "DropDatabase", b: sqbl.DropDatabase("app_test"), want: `DROP DATABASE "app_test"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -75,6 +77,8 @@ func TestDialectFree_PanicsWithoutDialect(t *testing.T) {
 		{name: "DropTable", b: sqbl.DropTable("users")},
 		{name: "DropIndex", b: sqbl.DropIndex("idx")},
 		{name: "AlterTable", b: sqbl.AlterTable("users")},
+		{name: "CreateDatabase", b: sqbl.CreateDatabase("app_test")},
+		{name: "DropDatabase", b: sqbl.DropDatabase("app_test")},
 	}
 	for _, tt := range builders {
 		t.Run(tt.name+"/ToSql", func(t *testing.T) {

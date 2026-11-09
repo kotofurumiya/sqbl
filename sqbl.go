@@ -8,7 +8,7 @@
 //
 //	q := sqbl.From("users").Select("id").Where(sqbl.Eq("id", sqbl.P(1)))
 //	q.ToSqlWithDialect(&dialect.PostgresDialect{}) // SELECT "id" FROM "users" WHERE "id" = $1
-//	q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?
+//	q.ToSqlWithDialect(&dialect.SqliteDialect{})   // SELECT "id" FROM "users" WHERE "id" = ?1
 package sqbl
 
 import "github.com/kotofurumiya/sqbl/builder"
@@ -91,4 +91,20 @@ func DropIndex(name string) builder.SqlDropIndexBuilder {
 func AlterTable(table string) builder.SqlAlterTableBuilder {
 	var b builder.SqlAlterTableBuilder
 	return b.Table(table)
+}
+
+// CreateDatabase starts a CREATE DATABASE builder for the given database name.
+//
+//	sqbl.CreateDatabase("app_test")
+func CreateDatabase(name string) builder.SqlCreateDatabaseBuilder {
+	var b builder.SqlCreateDatabaseBuilder
+	return b.Name(name)
+}
+
+// DropDatabase starts a DROP DATABASE builder for the given database name.
+//
+//	sqbl.DropDatabase("app_test").IfExists()
+func DropDatabase(name string) builder.SqlDropDatabaseBuilder {
+	var b builder.SqlDropDatabaseBuilder
+	return b.Name(name)
 }

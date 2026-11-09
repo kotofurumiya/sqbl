@@ -121,6 +121,58 @@ func TestAliased(t *testing.T) {
 	}
 }
 
+func TestAsColumns(t *testing.T) {
+	t.Parallel()
+	d := &dialect.PostgresDialect{}
+
+	tests := []struct {
+		name     string
+		alias    Aliased
+		expected string
+	}{
+		{
+			name:     "single column",
+			alias:    AsColumns(Fn("unnest", P(1)), "ids", "id"),
+			expected: `unnest($1) AS "ids" ("id")`,
+		},
+		{
+			name:     "multiple columns",
+			alias:    AsColumns(Fn("unnest", P(1), P(2)), "pairs", "id", "name"),
+			expected: `unnest($1, $2) AS "pairs" ("id", "name")`,
+		},
+		{
+			name:     "no columns",
+			alias:    AsColumns("users", "u"),
+			expected: `"users" AS "u"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			tt.alias.AppendSQL(&buf, d)
+			if got := buf.String(); got != tt.expected {
+				t.Errorf("AppendSQL() = %q; want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAsColumns_CopiesColumns(t *testing.T) {
+	t.Parallel()
+	d := &dialect.PostgresDialect{}
+
+	cols := []string{"id"}
+	a := AsColumns(Fn("unnest", P(1)), "ids", cols...)
+	cols[0] = "changed"
+
+	var buf bytes.Buffer
+	a.AppendSQL(&buf, d)
+	if got, want := buf.String(), `unnest($1) AS "ids" ("id")`; got != want {
+		t.Errorf("AppendSQL() = %q; want %q", got, want)
+	}
+}
+
 func TestOrder(t *testing.T) {
 	t.Parallel()
 	d := &dialect.SimpleDialect{}

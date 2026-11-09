@@ -109,9 +109,9 @@ func TestSqliteDialect_PlaceholderIndexed(t *testing.T) {
 		index    int
 		expected string
 	}{
-		{"first placeholder", 1, "?"},
-		{"second placeholder", 2, "?"},
-		{"large index", 999, "?"},
+		{"first placeholder", 1, "?1"},
+		{"second placeholder", 2, "?2"},
+		{"large index", 999, "?999"},
 	}
 
 	for _, tt := range tests {
