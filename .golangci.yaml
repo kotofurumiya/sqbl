@@ -18,3 +18,7 @@ linters:
           disabled: false
     godot:
       scope: toplevel
+
+formatters:
+  enable:
+    - gofmt
