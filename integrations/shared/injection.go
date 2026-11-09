@@ -383,10 +383,10 @@ func RunInjection_CommentBasedPayloads(t testing.TB, conn Conn, s Suite) {
 	`)
 
 	payloads := []string{
-		"admin'--",              // comment truncation without space
-		"' OR '1'='1' /*",      // OR injection + block comment opener
-		"'; SELECT 1; --",      // stacked query via comment (SELECT 1 is DB-agnostic)
-		"1 OR 1=1",             // boolean injection without quotes (integer-column assumption)
+		"admin'--",        // comment truncation without space
+		"' OR '1'='1' /*", // OR injection + block comment opener
+		"'; SELECT 1; --", // stacked query via comment (SELECT 1 is DB-agnostic)
+		"1 OR 1=1",        // boolean injection without quotes (integer-column assumption)
 	}
 
 	insertSQL := s.InsertInto("victims").
