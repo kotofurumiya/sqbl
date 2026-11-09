@@ -9,7 +9,7 @@ import (
 
 // perDialect holds the expected output of one rendering for each dialect.
 type perDialect struct {
-	postgres, mysql, sqlite, simple string
+	postgres, mysql, sqlite string
 }
 
 func TestDialects(t *testing.T) {
@@ -36,33 +36,33 @@ func TestDialects(t *testing.T) {
 		{
 			name:   "Quote plain",
 			render: quote("users"),
-			want:   perDialect{`"users"`, "`users`", `"users"`, `"users"`},
+			want:   perDialect{`"users"`, "`users`", `"users"`},
 		},
 		{
 			// Quote handles a single part, so a dot stays inside the quotes.
 			name:   "Quote keeps dots",
 			render: quote("schema.table"),
-			want:   perDialect{`"schema.table"`, "`schema.table`", `"schema.table"`, `"schema.table"`},
+			want:   perDialect{`"schema.table"`, "`schema.table`", `"schema.table"`},
 		},
 		{
 			name:   "Quote escapes the dialect quote char",
 			render: quote("a\"b`c"),
-			want:   perDialect{`"a""b` + "`" + `c"`, "`a\"b``c`", `"a""b` + "`" + `c"`, `"a"b` + "`" + `c"`},
+			want:   perDialect{`"a""b` + "`" + `c"`, "`a\"b``c`", `"a""b` + "`" + `c"`},
 		},
 		{
 			name:   "QuoteIdentifier single part",
 			render: quoteIdent("users"),
-			want:   perDialect{`"users"`, "`users`", `"users"`, `"users"`},
+			want:   perDialect{`"users"`, "`users`", `"users"`},
 		},
 		{
 			name:   "QuoteIdentifier splits on dots",
 			render: quoteIdent("db.sch.table"),
-			want:   perDialect{`"db"."sch"."table"`, "`db`.`sch`.`table`", `"db"."sch"."table"`, `"db.sch.table"`},
+			want:   perDialect{`"db"."sch"."table"`, "`db`.`sch`.`table`", `"db"."sch"."table"`},
 		},
 		{
 			name:   "QuoteIdentifier keeps empty parts",
 			render: quoteIdent(".a..b."),
-			want:   perDialect{`""."a".""."b".""`, "``.`a`.``.`b`.``", `""."a".""."b".""`, `".a..b."`},
+			want:   perDialect{`""."a".""."b".""`, "``.`a`.``.`b`.``", `""."a".""."b".""`},
 		},
 		{
 			// Escaping must apply to every part, including at part boundaries.
@@ -72,39 +72,38 @@ func TestDialects(t *testing.T) {
 				`"""s"""."` + "`t`" + `"`,
 				"`\"s\"`.```t```",
 				`"""s"""."` + "`t`" + `"`,
-				`""s".` + "`t`" + `"`,
 			},
 		},
 		{
 			// Injection payloads stay inside one quoted identifier.
 			name:   "QuoteIdentifier contains injection",
 			render: quoteIdent(`x"; DROP TABLE t; --`),
-			want:   perDialect{`"x""; DROP TABLE t; --"`, "`x\"; DROP TABLE t; --`", `"x""; DROP TABLE t; --"`, `"x"; DROP TABLE t; --"`},
+			want:   perDialect{`"x""; DROP TABLE t; --"`, "`x\"; DROP TABLE t; --`", `"x""; DROP TABLE t; --"`},
 		},
 		{
 			name:   "PlaceholderPositional",
 			render: func(buf *bytes.Buffer, d dialect.Dialect) { d.PlaceholderPositional(buf) },
-			want:   perDialect{"?", "?", "?", "?"},
+			want:   perDialect{"?", "?", "?"},
 		},
 		{
 			name:   "PlaceholderIndexed 1",
 			render: indexed(1),
-			want:   perDialect{"$1", "?", "?1", "?1"},
+			want:   perDialect{"$1", "?", "?1"},
 		},
 		{
 			name:   "PlaceholderIndexed multi-digit",
 			render: indexed(123),
-			want:   perDialect{"$123", "?", "?123", "?123"},
+			want:   perDialect{"$123", "?", "?123"},
 		},
 		{
 			name:   "Bool true",
 			render: boolean(true),
-			want:   perDialect{"TRUE", "TRUE", "1", "TRUE"},
+			want:   perDialect{"TRUE", "TRUE", "1"},
 		},
 		{
 			name:   "Bool false",
 			render: boolean(false),
-			want:   perDialect{"FALSE", "FALSE", "0", "FALSE"},
+			want:   perDialect{"FALSE", "FALSE", "0"},
 		},
 	}
 
@@ -119,7 +118,6 @@ func TestDialects(t *testing.T) {
 				{"postgres", &dialect.Postgres{}, tt.want.postgres},
 				{"mysql", &dialect.MySQL{}, tt.want.mysql},
 				{"sqlite", &dialect.SQLite{}, tt.want.sqlite},
-				{"simple", &dialect.Simple{}, tt.want.simple},
 			} {
 				var buf bytes.Buffer
 				tt.render(&buf, c.d)

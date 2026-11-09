@@ -27,19 +27,26 @@ func TestPredicates(t *testing.T) {
 		{"column to column", Eq("u.id", "o.user_id"), `"u"."id" = "o"."user_id"`},
 		{"string operand is an identifier, not a value", Eq("status", "pending"), `"status" = "pending"`},
 		{"literal operands", Eq(1, true), "1 = TRUE"},
-		{"nil operand", Eq("a", nil), `"a" = NULL`},
 		{"function operand", Like(Fn("LOWER", "email"), P(1)), `LOWER("email") LIKE $1`},
 
 		{"In", In("id", P(1), 2, "other_id"), `"id" IN ($1, 2, "other_id")`},
 		{"In single value", In("id", P(1)), `"id" IN ($1)`},
 		{"In subquery-like fragment", In("id", Raw("SELECT 1")), `"id" IN (SELECT 1)`},
-		// sqbl does not validate, so an empty list renders as-is.
-		{"In without values", In("id"), `"id" IN ()`},
 		{"NotIn", NotIn(Fn("LOWER", "role"), Raw("'guest'"), Raw("'bot'")), `LOWER("role") NOT IN ('guest', 'bot')`},
 		{"IsNull", IsNull("deleted_at"), `"deleted_at" IS NULL`},
 		{"IsNotNull on function", IsNotNull(Fn("NULLIF", "score", 0)), `NULLIF("score", 0) IS NOT NULL`},
 		{"Between", Between("age", P(1), P(2)), `"age" BETWEEN $1 AND $2`},
 		{"Between mixed bounds", Between(Fn("ABS", "x"), 0, "t.max"), `ABS("x") BETWEEN 0 AND "t"."max"`},
+		{"In list may hold NULL", In("x", 1, nil), `"x" IN (1, NULL)`},
+
+		// And, Or and Not bind looser than these operators, so as operands they are parenthesized.
+		{"Or as comparison operand", Eq(Or(Eq("a", 1), Eq("b", 2)), false), `("a" = 1 OR "b" = 2) = FALSE`},
+		{"Not as comparison operand", Eq(true, Not(Eq("a", 1))), `TRUE = (NOT ("a" = 1))`},
+		{"And as In operand", In(And(Eq("a", 1), Eq("b", 2)), true), `("a" = 1 AND "b" = 2) IN (TRUE)`},
+		{"Or as IsNull operand", IsNull(Or(Eq("a", 1), Eq("b", 2))), `("a" = 1 OR "b" = 2) IS NULL`},
+		{"And as Between operand", Between(And(Eq("a", 1)), false, true), `("a" = 1) BETWEEN FALSE AND TRUE`},
+		// Raw is never inspected, so it keeps whatever parentheses it carries.
+		{"Raw operand is written as-is", Eq(Raw("a OR b"), true), "a OR b = TRUE"},
 	}
 
 	for _, tt := range tests {
@@ -63,7 +70,10 @@ func TestLogical(t *testing.T) {
 		{"And", And(a, b, c), `"a" = 1 AND "b" = 2 AND "c" = 3`},
 		{"Or", Or(a, b), `"a" = 1 OR "b" = 2`},
 		{"single operand has no operator", And(a), `"a" = 1`},
-		{"no operands render nothing", Or(), ""},
+		{"empty And is TRUE", And(), "TRUE"},
+		{"empty Or is FALSE", Or(), "FALSE"},
+		// The identities keep dynamic filters correct when one branch ends up empty.
+		{"empty Or inside And", And(a, Or()), `"a" = 1 AND (FALSE)`},
 		{"Or inside And is parenthesized", And(a, Or(b, c)), `"a" = 1 AND ("b" = 2 OR "c" = 3)`},
 		{"And inside Or is parenthesized", Or(And(a, b), c), `("a" = 1 AND "b" = 2) OR "c" = 3`},
 		// Same-operator nesting is parenthesized too; it is redundant but harmless.

@@ -26,7 +26,7 @@ type Dialect interface {
 
 All methods write directly into a `*bytes.Buffer` to avoid intermediate string allocations. `Quote` handles a single segment; `QuoteIdentifier` splits on `.` and calls `Quote` on each part.
 
-Built-in implementations: `Postgres`, `MySQL`, `SQLite`, `Simple` (tests only).
+Built-in implementations: `Postgres`, `MySQL`, `SQLite`.
 
 ---
 

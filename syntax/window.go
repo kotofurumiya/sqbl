@@ -14,7 +14,7 @@ import (
 //	// ROW_NUMBER() OVER (PARTITION BY "dept" ORDER BY "salary")
 type WindowExpr struct {
 	expr        SQLFragment
-	partitionBy []string
+	partitionBy []any
 	orderBy     []any
 	frame       string // e.g. "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
 }
@@ -29,17 +29,21 @@ func Over(expr any) WindowExpr {
 	return WindowExpr{expr: ToFragment(expr)}
 }
 
-// PartitionBy sets the PARTITION BY columns.
+// PartitionBy sets the PARTITION BY expressions.
+// Each accepts the same values as AppendValue, so a plain string is an identifier.
 //
 //	w.PartitionBy("department", "region")
 //	// PARTITION BY "department", "region"
-func (w WindowExpr) PartitionBy(cols ...string) WindowExpr {
+//
+//	w.PartitionBy(syntax.Fn("DATE_TRUNC", syntax.Raw("'month'"), "created_at"))
+//	// PARTITION BY DATE_TRUNC('month', "created_at")
+func (w WindowExpr) PartitionBy(cols ...any) WindowExpr {
 	w.partitionBy = slices.Clone(cols)
 	return w
 }
 
-// OrderBy sets the ORDER BY columns for the window.
-// Accepts column name strings or Order expressions (syntax.Asc / syntax.Desc).
+// OrderBy sets the ORDER BY expressions for the window.
+// Each accepts the same values as AppendValue; use Asc or Desc for a direction.
 //
 //	w.OrderBy("salary")
 //	w.OrderBy(syntax.Desc("salary"))
@@ -48,7 +52,8 @@ func (w WindowExpr) OrderBy(cols ...any) WindowExpr {
 	return w
 }
 
-// Rows sets the frame clause.
+// Rows sets a ROWS frame clause. The frame is written as-is, so never build it
+// from untrusted input.
 //
 //	w.Rows("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW")
 func (w WindowExpr) Rows(frame string) WindowExpr {
@@ -56,7 +61,8 @@ func (w WindowExpr) Rows(frame string) WindowExpr {
 	return w
 }
 
-// Range sets the RANGE frame clause.
+// Range sets a RANGE frame clause. The frame is written as-is, so never build it
+// from untrusted input.
 //
 //	w.Range("BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW")
 func (w WindowExpr) Range(frame string) WindowExpr {

@@ -7,7 +7,7 @@ import (
 	"github.com/kotofurumiya/sqbl/dialect"
 )
 
-// FnExpr represents a SQL function call such as SUM(amount) or COUNT(*).
+// FnExpr represents a SQL function call such as SUM("amount") or COUNT(*).
 // It implements SQLFragment and can be used anywhere a column expression is accepted.
 type FnExpr struct {
 	name string
@@ -17,8 +17,8 @@ type FnExpr struct {
 var _ SQLFragment = FnExpr{}
 
 // Fn creates a SQL function call expression.
-// The name is written as-is. Each argument accepts the same values as
-// AppendValue, so a plain string is an identifier.
+// The name is written as-is, so never build it from untrusted input.
+// Each argument accepts the same values as AppendValue, so a plain string is an identifier.
 //
 //	Fn("SUM", "amount")                  → SUM("amount")
 //	Fn("COUNT", "*")                     → COUNT(*)
@@ -53,7 +53,7 @@ var _ SQLFragment = CastExpr{}
 
 // Cast creates a CAST(expr AS type) expression.
 // The expression accepts the same values as AppendValue, so a plain string is
-// an identifier. The type is written as-is.
+// an identifier. The type is written as-is, so never build it from untrusted input.
 //
 //	Cast(P(1), "bigint[]") → CAST($1 AS bigint[])
 //	Cast("price", "TEXT")  → CAST("price" AS TEXT)
