@@ -133,3 +133,30 @@ func assertPanics(t *testing.T, f func()) {
 	}()
 	f()
 }
+
+// TestSqlBuilder_CopiesCallerSlices checks that builders keep their own copy of
+// slices passed to variadic methods, so reusing a slice cannot rewrite a query
+// that was already built.
+func TestSqlBuilder_CopiesCallerSlices(t *testing.T) {
+	t.Parallel()
+	cols := []string{"a", "b"}
+	vals := []any{1, 2}
+
+	tests := []sqlCase{
+		{"select distinct on", newSelect().From("t").DistinctOn(cols...), `SELECT DISTINCT ON ("a", "b") * FROM "t";`},
+		{"insert columns and values", newInsert().Into("t").Columns(cols...).Values(vals...), `INSERT INTO "t" ("a", "b") VALUES (1, 2);`},
+		{"insert on conflict", newInsert().Into("t").Values(1).OnConflict(cols...).DoUpdate(`"a" = 1`), `INSERT INTO "t" VALUES (1) ON CONFLICT ("a", "b") DO UPDATE SET "a" = 1;`},
+		{"insert returning", newInsert().Into("t").Values(1).Returning(cols...), `INSERT INTO "t" VALUES (1) RETURNING "a", "b";`},
+		{"update returning", newUpdate().Table("t").Set("a", 1).Returning(cols...), `UPDATE "t" SET "a" = 1 RETURNING "a", "b";`},
+		{"delete returning", newDelete().From("t").Returning(cols...), `DELETE FROM "t" RETURNING "a", "b";`},
+		{"create table column constraints", newCreateTable().Table("t").Column("a", "INT", cols...), `CREATE TABLE "t" ("a" INT a b);`},
+		{
+			name: "create table constraints",
+			b:    newCreateTable().Table("t").Column("a", "INT").PrimaryKey(cols...).Unique(cols...).ForeignKey(cols, "r", cols, cols...),
+			want: `CREATE TABLE "t" ("a" INT, PRIMARY KEY ("a", "b"), UNIQUE ("a", "b"), FOREIGN KEY ("a", "b") REFERENCES "r" ("a", "b") a b);`,
+		},
+	}
+	cols[0], cols[1] = "x", "y"
+	vals[0], vals[1] = 8, 9
+	runSQLCases(t, tests)
+}

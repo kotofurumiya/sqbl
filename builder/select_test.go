@@ -131,14 +131,14 @@ func TestSqlSelectBuilder_Joins(t *testing.T) {
 			b:    users.LeftLateralJoin(latest, "latest"),
 			want: `
 				SELECT "u"."id" FROM "users" AS "u"
-				LEFT LATERAL JOIN (SELECT "amount" FROM "orders" WHERE "user_id" = "u"."id" LIMIT 1) AS "latest" ON TRUE;`,
+				LEFT JOIN LATERAL (SELECT "amount" FROM "orders" WHERE "user_id" = "u"."id" LIMIT 1) AS "latest" ON TRUE;`,
 		},
 		{
 			name: "cross lateral has no on",
 			b:    users.CrossLateralJoin(latest, "latest"),
 			want: `
 				SELECT "u"."id" FROM "users" AS "u"
-				CROSS LATERAL JOIN (SELECT "amount" FROM "orders" WHERE "user_id" = "u"."id" LIMIT 1) AS "latest";`,
+				CROSS JOIN LATERAL (SELECT "amount" FROM "orders" WHERE "user_id" = "u"."id" LIMIT 1) AS "latest";`,
 		},
 		{
 			name: "joins accumulate in call order",
@@ -208,21 +208,21 @@ func TestSqlSelectBuilder_CTE(t *testing.T) {
 		{
 			name: "with",
 			b:    newSelect().With("recent", recent).From("recent"),
-			want: `WITH recent AS (SELECT * FROM "orders" WHERE "created_at" > $1) SELECT * FROM "recent";`,
+			want: `WITH "recent" AS (SELECT * FROM "orders" WHERE "created_at" > $1) SELECT * FROM "recent";`,
 		},
 		{
 			name: "multiple ctes keep call order",
 			b:    newSelect().With("recent", recent).With("big", big).From("big"),
 			want: `
-				WITH recent AS (SELECT * FROM "orders" WHERE "created_at" > $1),
-				big AS (SELECT * FROM "recent" WHERE "amount" > $2)
+				WITH "recent" AS (SELECT * FROM "orders" WHERE "created_at" > $1),
+				"big" AS (SELECT * FROM "recent" WHERE "amount" > $2)
 				SELECT * FROM "big";`,
 		},
 		{
 			name: "with recursive",
 			b:    newSelect().WithRecursive("tree", tree).From("tree"),
 			want: `
-				WITH RECURSIVE tree AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL
+				WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL
 				UNION ALL SELECT "c".* FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" = "t"."id")
 				SELECT * FROM "tree";`,
 		},
@@ -231,10 +231,16 @@ func TestSqlSelectBuilder_CTE(t *testing.T) {
 			name: "one recursive cte makes the whole clause recursive",
 			b:    newSelect().With("recent", recent).WithRecursive("tree", tree).From("tree"),
 			want: `
-				WITH RECURSIVE recent AS (SELECT * FROM "orders" WHERE "created_at" > $1),
-				tree AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL
+				WITH RECURSIVE "recent" AS (SELECT * FROM "orders" WHERE "created_at" > $1),
+				"tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL
 				UNION ALL SELECT "c".* FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" = "t"."id")
 				SELECT * FROM "tree";`,
+		},
+		{
+			// The name is quoted like any identifier, so reserved words work as CTE names.
+			name: "name is quoted",
+			b:    newSelect().With("order", recent).From("order"),
+			want: `WITH "order" AS (SELECT * FROM "orders" WHERE "created_at" > $1) SELECT * FROM "order";`,
 		},
 	})
 }
@@ -273,6 +279,24 @@ func TestSqlSelectBuilder_Subqueries(t *testing.T) {
 				SELECT "id", (SELECT MAX("amount") FROM "orders") AS "max_amount" FROM "orders"
 				WHERE "amount" = (SELECT MAX("amount") FROM "orders");`,
 		},
+		{
+			// A lone subquery already brings its own parentheses; doubling them would
+			// make PostgreSQL treat it as a scalar subquery.
+			name: "as the only operand of in and not in",
+			b: newSelect().From("orders").Where(syntax.And(
+				syntax.In("user_id", newSelect().From("vips").Select("id")),
+				syntax.NotIn("id", newSelect().From("refunds").Select("order_id")),
+			)),
+			want: `
+				SELECT * FROM "orders"
+				WHERE "user_id" IN (SELECT "id" FROM "vips")
+				AND "id" NOT IN (SELECT "order_id" FROM "refunds");`,
+		},
+		{
+			name: "among other in values",
+			b:    newSelect().From("orders").Where(syntax.In("amount", 0, maxTotal)),
+			want: `SELECT * FROM "orders" WHERE "amount" IN (0, (SELECT MAX("amount") FROM "orders"));`,
+		},
 	})
 }
 
@@ -296,7 +320,7 @@ func TestSqlSelectBuilder_AllClauses(t *testing.T) {
 		ToSql()
 
 	sqltesting.AssertSQL(t, got, `
-		WITH recent AS (SELECT * FROM "orders")
+		WITH "recent" AS (SELECT * FROM "orders")
 		SELECT DISTINCT "u"."id", SUM("o"."amount") AS "total"
 		FROM "users" AS "u"
 		LEFT JOIN "orders" AS "o" ON "u"."id" = "o"."user_id"
@@ -326,15 +350,15 @@ func TestSqlSelectBuilder_BranchIsolation(t *testing.T) {
 	right := base.With("r", cte).CrossJoin("jr").Intersect(other)
 
 	sqltesting.AssertSQL(t, base.ToSql(), `
-		WITH a AS (SELECT * FROM "t"), b AS (SELECT * FROM "t"), c AS (SELECT * FROM "t")
+		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s";`)
 	sqltesting.AssertSQL(t, left.ToSql(), `
-		WITH a AS (SELECT * FROM "t"), b AS (SELECT * FROM "t"), c AS (SELECT * FROM "t"), l AS (SELECT * FROM "t")
+		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "l" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jl"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" EXCEPT SELECT * FROM "s";`)
 	sqltesting.AssertSQL(t, right.ToSql(), `
-		WITH a AS (SELECT * FROM "t"), b AS (SELECT * FROM "t"), c AS (SELECT * FROM "t"), r AS (SELECT * FROM "t")
+		WITH "a" AS (SELECT * FROM "t"), "b" AS (SELECT * FROM "t"), "c" AS (SELECT * FROM "t"), "r" AS (SELECT * FROM "t")
 		SELECT * FROM "u" CROSS JOIN "j1" CROSS JOIN "j2" CROSS JOIN "j3" CROSS JOIN "jr"
 		UNION SELECT * FROM "s" UNION SELECT * FROM "s" UNION SELECT * FROM "s" INTERSECT SELECT * FROM "s";`)
 }

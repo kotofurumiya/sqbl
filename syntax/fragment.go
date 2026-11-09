@@ -45,6 +45,14 @@ func (i Ident) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	d.QuoteIdentifier(buf, s)
 }
 
+// Subquery is a SqlFragment that renders itself enclosed in parentheses, such as a
+// SELECT builder. Expressions that need parentheses around their operand, like IN,
+// write it as-is instead of adding another pair.
+type Subquery interface {
+	SqlFragment
+	IsSubquery()
+}
+
 // Raw is a SQL fragment written as-is, without quoting or escaping.
 // Never build a Raw from untrusted input; pass values with P instead.
 //

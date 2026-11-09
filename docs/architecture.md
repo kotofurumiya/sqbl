@@ -52,6 +52,7 @@ Key types:
 - `WindowExpr` — a window function expression (`expr OVER (PARTITION BY ... ORDER BY ...)`)
 - `Parameter` — a bind parameter placeholder (`?`, `$N`, `:name`, `@name`)
 - Condition types: `ComparisonExpr`, `LogicalExpr`, `NotExpr`, `InExpr`, `NullExpr`, `BetweenExpr`
+- `Subquery` — a `SqlFragment` that renders with its own parentheses, such as a SELECT builder; `IN` uses it as-is, so `IN (subquery)` gets a single pair of parentheses
 
 Every argument that accepts an expression (`any`) follows one rule, implemented by `AppendValue` and `ToFragment`:
 

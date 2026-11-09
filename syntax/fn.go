@@ -2,6 +2,7 @@ package syntax
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 )
@@ -26,7 +27,7 @@ var _ SqlFragment = SqlFn{}
 //	Fn("DATE_TRUNC", Raw("'day'"), "ts") → DATE_TRUNC('day', "ts")
 //	Fn("NOW")                            → NOW()
 func Fn(name string, args ...any) SqlFn {
-	return SqlFn{name: name, args: args}
+	return SqlFn{name: name, args: slices.Clone(args)}
 }
 
 // AppendSQL implements SqlFragment, writing the function call into buf.

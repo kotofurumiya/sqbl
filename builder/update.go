@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 	"github.com/kotofurumiya/sqbl/internal/sqlbuf"
@@ -139,6 +140,6 @@ func (b SqlUpdateBuilder) Where(expr syntax.SqlFragment) SqlUpdateBuilder {
 //
 //	sqblpg.Update("users").Set("name", sqbl.P(1)).Where(...).Returning("id", "name")
 func (b SqlUpdateBuilder) Returning(cols ...string) SqlUpdateBuilder {
-	b.returning = cols
+	b.returning = slices.Clone(cols)
 	return b
 }

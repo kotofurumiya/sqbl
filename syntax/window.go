@@ -2,6 +2,7 @@ package syntax
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/kotofurumiya/sqbl/dialect"
 )
@@ -33,7 +34,7 @@ func Over(expr any) WindowExpr {
 //	w.PartitionBy("department", "region")
 //	// PARTITION BY "department", "region"
 func (w WindowExpr) PartitionBy(cols ...string) WindowExpr {
-	w.partitionBy = cols
+	w.partitionBy = slices.Clone(cols)
 	return w
 }
 
@@ -43,7 +44,7 @@ func (w WindowExpr) PartitionBy(cols ...string) WindowExpr {
 //	w.OrderBy("salary")
 //	w.OrderBy(syntax.Desc("salary"))
 func (w WindowExpr) OrderBy(cols ...any) WindowExpr {
-	w.orderBy = cols
+	w.orderBy = slices.Clone(cols)
 	return w
 }
 

@@ -124,11 +124,32 @@ func TestAliasAndOrder(t *testing.T) {
 	}
 }
 
-func TestAsColumns_DoesNotAliasCallerSlice(t *testing.T) {
+// TestCopiesCallerSlices checks that fragments keep their own copy of slices
+// passed to variadic constructors, so reusing a slice cannot rewrite them.
+func TestCopiesCallerSlices(t *testing.T) {
 	t.Parallel()
-	cols := []string{"id"}
-	a := AsColumns(Fn("unnest", P(1)), "ids", cols...)
-	cols[0] = "changed"
+	names := []string{"a", "b"}
+	args := []any{"a", "b"}
+	exprs := []SqlFragment{Raw("x"), Raw("y")}
 
-	sqltesting.AssertSQL(t, render(a), `unnest($1) AS "ids" ("id")`)
+	tests := []struct {
+		name     string
+		fragment SqlFragment
+		want     string
+	}{
+		{"AsColumns", AsColumns("t", "s", names...), `"t" AS "s" ("a", "b")`},
+		{"Fn", Fn("f", args...), `f("a", "b")`},
+		{"And", And(exprs...), `x AND y`},
+		{"Or", Or(exprs...), `x OR y`},
+		{"In", In("c", args...), `"c" IN ("a", "b")`},
+		{"NotIn", NotIn("c", args...), `"c" NOT IN ("a", "b")`},
+		{"window", Over(Fn("f")).PartitionBy(names...).OrderBy(args...), `f() OVER (PARTITION BY "a", "b" ORDER BY "a", "b")`},
+	}
+	names[0], args[0], exprs[0] = "z", "z", Raw("z")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sqltesting.AssertSQL(t, render(tt.fragment), tt.want)
+		})
+	}
 }
