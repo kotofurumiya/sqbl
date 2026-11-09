@@ -324,3 +324,50 @@ func TestMySQL_OnDuplicateKeyUpdate(t *testing.T) {
 		t.Errorf("count = %d; want 2", count)
 	}
 }
+
+func TestMySQL_OnDuplicateKeyUpdateSet(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	ctx := context.Background()
+	a := adapt(db)
+
+	if err := a.Exec(ctx, `
+		CREATE TEMPORARY TABLE tag_labels (
+			tag   VARCHAR(255) NOT NULL PRIMARY KEY,
+			label TEXT         NOT NULL,
+			hits  INTEGER      NOT NULL
+		)
+	`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	upsertSQL := defaultSuite.InsertInto("tag_labels").
+		Columns("tag", "label", "hits").
+		Values(sqblmysql.P(), sqblmysql.P(), sqblmysql.P()).
+		OnDuplicateKeyUpdateSet("label", sqblmysql.Fn("VALUES", "label")).
+		OnDuplicateKeyUpdateSet("hits", sqblmysql.Raw("`hits` + 1")).
+		ToSql()
+
+	if err := a.Exec(ctx, upsertSQL, "go", "Go", 1); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	// The duplicate key takes the new label and increments hits.
+	if err := a.Exec(ctx, upsertSQL, "go", "Golang", 1); err != nil {
+		t.Fatalf("second insert (duplicate): %v", err)
+	}
+
+	var label string
+	var hits int
+	if err := a.QueryRow(ctx,
+		defaultSuite.From("tag_labels").
+			Select("label", "hits").
+			Where(sqblmysql.Eq("tag", sqblmysql.P())).
+			ToSql(),
+		"go",
+	).Scan(&label, &hits); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if label != "Golang" || hits != 2 {
+		t.Errorf("got (%q, %d); want (%q, %d)", label, hits, "Golang", 2)
+	}
+}

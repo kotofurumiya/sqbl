@@ -209,6 +209,79 @@ func TestSqlInsertBuilder_OnConflictDoUpdate_MultipleSet(t *testing.T) {
 	}
 }
 
+func TestSqlInsertBuilder_DoUpdateSet(t *testing.T) {
+	t.Parallel()
+	got := (builder.SqlInsertBuilder{}).
+		Dialect(&dialect.PostgresDialect{}).
+		Into("users").
+		Columns("id", "name", "visits").
+		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+		OnConflict("id").
+		DoUpdateSet("name", "excluded.name").
+		DoUpdateSet("visits", syntax.Raw(`"users"."visits" + 1`)).
+		DoUpdateSet("note", syntax.P(4)).
+		ToSql()
+	want := `INSERT INTO "users" ("id", "name", "visits") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "visits" = "users"."visits" + 1, "note" = $4;`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_DoUpdateSet_MixedWithDoUpdate(t *testing.T) {
+	t.Parallel()
+	got := (builder.SqlInsertBuilder{}).
+		Dialect(&dialect.PostgresDialect{}).
+		Into("users").
+		Columns("id", "name", "bio").
+		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+		OnConflict("id").
+		DoUpdateSet("name", "excluded.name").
+		DoUpdate(`"bio" = excluded."bio"`).
+		DoUpdateWhere(syntax.Ne("users.name", "excluded.name")).
+		ToSql()
+	want := `INSERT INTO "users" ("id", "name", "bio") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "bio" = excluded."bio" WHERE "users"."name" <> "excluded"."name";`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_DoUpdate_Appends(t *testing.T) {
+	t.Parallel()
+	got := newInsertBuilder().
+		Into("profiles").
+		Columns("user_id", "name", "bio").
+		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
+		OnConflict("user_id").
+		DoUpdate("name = EXCLUDED.name").
+		DoUpdate("bio = EXCLUDED.bio").
+		ToSql()
+	want := `INSERT INTO "profiles" ("user_id", "name", "bio") VALUES (?1, ?2, ?3) ON CONFLICT ("user_id") DO UPDATE SET name = EXCLUDED.name, bio = EXCLUDED.bio;`
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_DoUpdateSet_DoesNotShareState(t *testing.T) {
+	t.Parallel()
+	base := (builder.SqlInsertBuilder{}).
+		Dialect(&dialect.PostgresDialect{}).
+		Into("users").
+		Columns("id", "name").
+		Values(syntax.P(1), syntax.P(2)).
+		OnConflict("id").
+		DoUpdateSet("name", "excluded.name")
+	a := base.DoUpdateSet("a", 1).ToSql()
+	b := base.DoUpdateSet("b", 2).ToSql()
+	wantA := `INSERT INTO "users" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "a" = 1;`
+	wantB := `INSERT INTO "users" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "b" = 2;`
+	if a != wantA {
+		t.Errorf("a: got %q; want %q", a, wantA)
+	}
+	if b != wantB {
+		t.Errorf("b: got %q; want %q", b, wantB)
+	}
+}
+
 func TestSqlInsertBuilder_OnConflictDoNothing_WithReturning(t *testing.T) {
 	t.Parallel()
 	got := newInsertBuilder().
@@ -341,6 +414,22 @@ func TestSqlInsertBuilder_OnDuplicateKeyUpdate(t *testing.T) {
 		OnDuplicateKeyUpdate("count = VALUES(count)").
 		ToSql()
 	want := "INSERT INTO `tags` (`name`, `count`) VALUES (?, ?) ON DUPLICATE KEY UPDATE count = VALUES(count);"
+	if got != want {
+		t.Errorf("got %q; want %q", got, want)
+	}
+}
+
+func TestSqlInsertBuilder_OnDuplicateKeyUpdateSet(t *testing.T) {
+	t.Parallel()
+	got := (&builder.SqlInsertBuilder{}).
+		Dialect(&dialect.MysqlDialect{}).
+		Into("tags").
+		Columns("name", "count").
+		Values(syntax.P(1), syntax.P(2)).
+		OnDuplicateKeyUpdateSet("count", syntax.Fn("VALUES", "count")).
+		OnDuplicateKeyUpdate("`updated_at` = NOW()").
+		ToSql()
+	want := "INSERT INTO `tags` (`name`, `count`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `count` = VALUES(`count`), `updated_at` = NOW();"
 	if got != want {
 		t.Errorf("got %q; want %q", got, want)
 	}

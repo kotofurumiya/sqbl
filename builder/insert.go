@@ -21,12 +21,12 @@ type SqlInsertBuilder struct {
 	orConflict       string // SQLite: "REPLACE", "IGNORE", "ABORT", "FAIL", "ROLLBACK"
 	columns          []string
 	rows             []syntax.ValueRow
-	conflictTarget   []string           // columns for ON CONFLICT (col1, col2); nil means no conflict clause
-	conflictWhere    syntax.SqlFragment // index predicate after the conflict target (partial unique index)
-	conflictAction   string             // "NOTHING" or "UPDATE"
-	conflictSets     []string           // raw SET fragments for DO UPDATE, e.g. "value = EXCLUDED.value"
-	updateWhere      syntax.SqlFragment // condition after DO UPDATE SET
-	duplicateKeySets []string           // raw SET fragments for ON DUPLICATE KEY UPDATE (MySQL)
+	conflictTarget   []string             // columns for ON CONFLICT (col1, col2); nil means no conflict clause
+	conflictWhere    syntax.SqlFragment   // index predicate after the conflict target (partial unique index)
+	conflictAction   string               // "NOTHING" or "UPDATE"
+	conflictSets     []syntax.SqlFragment // assignments for DO UPDATE SET
+	updateWhere      syntax.SqlFragment   // condition after DO UPDATE SET
+	duplicateKeySets []syntax.SqlFragment // assignments for ON DUPLICATE KEY UPDATE (MySQL)
 	returning        []string
 }
 
@@ -106,12 +106,7 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 		if len(b.conflictSets) > 0 {
 			b.renderConflictTarget(buf, d)
 			buf.WriteString(" DO UPDATE SET ")
-			for i, s := range b.conflictSets {
-				if i > 0 {
-					buf.WriteString(", ")
-				}
-				buf.WriteString(s)
-			}
+			appendAssignments(buf, d, b.conflictSets)
 			if b.updateWhere != nil {
 				buf.WriteString(" WHERE ")
 				b.updateWhere.AppendSQL(buf, d)
@@ -120,12 +115,7 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 	}
 	if len(b.duplicateKeySets) > 0 {
 		buf.WriteString(" ON DUPLICATE KEY UPDATE ")
-		for i, s := range b.duplicateKeySets {
-			if i > 0 {
-				buf.WriteString(", ")
-			}
-			buf.WriteString(s)
-		}
+		appendAssignments(buf, d, b.duplicateKeySets)
 	}
 
 	// RETURNING col1, col2, ...
@@ -138,6 +128,25 @@ func (b SqlInsertBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			d.QuoteIdentifier(buf, col)
 		}
 	}
+}
+
+// appendAssignments writes comma-separated assignments into buf.
+func appendAssignments(buf *bytes.Buffer, d dialect.SqlDialect, sets []syntax.SqlFragment) {
+	for i, s := range sets {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		s.AppendSQL(buf, d)
+	}
+}
+
+// rawAssignments wraps raw SQL assignment strings as fragments.
+func rawAssignments(sets []string) []syntax.SqlFragment {
+	frags := make([]syntax.SqlFragment, len(sets))
+	for i, s := range sets {
+		frags[i] = syntax.Raw(s)
+	}
+	return frags
 }
 
 // renderConflictTarget writes "ON CONFLICT [(cols) [WHERE pred]]" into buf.
@@ -204,22 +213,42 @@ func (b SqlInsertBuilder) OnConflictDoNothing() SqlInsertBuilder {
 }
 
 // OnConflict sets the conflict target columns and prepares the builder for a
-// DO UPDATE clause. Chain DoUpdate immediately after to complete the upsert.
+// DO UPDATE clause. Chain DoUpdateSet or DoUpdate to complete the upsert.
 //
 //	sqblpg.InsertInto("settings").Columns("user_id", "key", "value").
 //	    Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
-//	    OnConflict("user_id", "key").DoUpdate("value = EXCLUDED.value")
+//	    OnConflict("user_id", "key").DoUpdateSet("value", "excluded.value")
 func (b SqlInsertBuilder) OnConflict(cols ...string) SqlInsertBuilder {
 	b.conflictTarget = cols
 	return b
 }
 
-// DoUpdate completes an ON CONFLICT … DO UPDATE SET clause.
-// Each argument is a raw SQL assignment fragment, e.g. "value = EXCLUDED.value".
-// Must be called after OnConflict.
+// DoUpdate adds raw SQL assignments to an ON CONFLICT … DO UPDATE SET clause.
+// Each argument is written as-is, e.g. `"value" = excluded."value"`.
+// Prefer DoUpdateSet unless the assignment cannot be expressed with it.
+// Calling DoUpdate or DoUpdateSet again appends more assignments.
 func (b SqlInsertBuilder) DoUpdate(sets ...string) SqlInsertBuilder {
 	b.conflictAction = "UPDATE"
-	b.conflictSets = sets
+	b.conflictSets = append(append([]syntax.SqlFragment(nil), b.conflictSets...), rawAssignments(sets)...)
+	return b
+}
+
+// DoUpdateSet adds an assignment to an ON CONFLICT … DO UPDATE SET clause.
+// The value accepts the same values as syntax.AppendValue, so a plain string
+// is an identifier. Call it multiple times to assign multiple columns.
+//
+// The row proposed for insertion is referred to as excluded. Write it in
+// lowercase: the string is quoted as an identifier, and PostgreSQL does not
+// match a quoted "EXCLUDED".
+//
+//	sqblpg.InsertInto("users").Columns("id", "name").Values(sqbl.P(1), sqbl.P(2)).
+//	    OnConflict("id").
+//	    DoUpdateSet("name", "excluded.name").
+//	    DoUpdateSet("updated_at", sqblpg.Fn("NOW"))
+//	// ... ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "updated_at" = NOW()
+func (b SqlInsertBuilder) DoUpdateSet(col string, val any) SqlInsertBuilder {
+	b.conflictAction = "UPDATE"
+	b.conflictSets = append(append([]syntax.SqlFragment(nil), b.conflictSets...), setClause{Col: col, Val: val})
 	return b
 }
 
@@ -255,13 +284,29 @@ func (b SqlInsertBuilder) DoUpdateWhere(expr syntax.SqlFragment) SqlInsertBuilde
 	return b
 }
 
-// OnDuplicateKeyUpdate adds an ON DUPLICATE KEY UPDATE clause. Supported by MySQL.
-// Each argument is a raw SQL assignment fragment, e.g. "value = VALUES(value)".
+// OnDuplicateKeyUpdate adds raw SQL assignments to an ON DUPLICATE KEY UPDATE clause.
+// Supported by MySQL and MariaDB.
+// Each argument is written as-is, e.g. "`count` = VALUES(`count`)".
+// Prefer OnDuplicateKeyUpdateSet unless the assignment cannot be expressed with it.
+// Calling OnDuplicateKeyUpdate or OnDuplicateKeyUpdateSet again appends more assignments.
 //
 //	sqblmysql.InsertInto("tags").Columns("name", "count").Values(sqbl.P(1), sqbl.P(2)).
-//	    OnDuplicateKeyUpdate("count = VALUES(count)")
+//	    OnDuplicateKeyUpdate("`count` = VALUES(`count`)")
 func (b SqlInsertBuilder) OnDuplicateKeyUpdate(sets ...string) SqlInsertBuilder {
-	b.duplicateKeySets = sets
+	b.duplicateKeySets = append(append([]syntax.SqlFragment(nil), b.duplicateKeySets...), rawAssignments(sets)...)
+	return b
+}
+
+// OnDuplicateKeyUpdateSet adds an assignment to an ON DUPLICATE KEY UPDATE clause.
+// Supported by MySQL and MariaDB.
+// The value accepts the same values as syntax.AppendValue, so a plain string
+// is an identifier. Call it multiple times to assign multiple columns.
+//
+//	sqblmysql.InsertInto("tags").Columns("name", "count").Values(sqbl.P(1), sqbl.P(2)).
+//	    OnDuplicateKeyUpdateSet("count", sqblmysql.Fn("VALUES", "count"))
+//	// ... ON DUPLICATE KEY UPDATE `count` = VALUES(`count`)
+func (b SqlInsertBuilder) OnDuplicateKeyUpdateSet(col string, val any) SqlInsertBuilder {
+	b.duplicateKeySets = append(append([]syntax.SqlFragment(nil), b.duplicateKeySets...), setClause{Col: col, Val: val})
 	return b
 }
 

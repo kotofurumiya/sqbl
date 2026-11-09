@@ -42,7 +42,7 @@ func RunCTEAndAggregation(t testing.TB, conn Conn, s Suite) {
 		2, "Alice", 3000, "2025-01-20",
 		3, "Bob", 8000, "2025-01-15",
 		4, "Carol", 1000, "2024-12-20", // prior month: excluded by CTE
-		5, "Bob", 2000, "2025-02-01",   // next month: excluded by CTE
+		5, "Bob", 2000, "2025-02-01", // next month: excluded by CTE
 	)
 
 	// CTE: select only January 2025 rows using BETWEEN for the date range.
