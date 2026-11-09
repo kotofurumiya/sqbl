@@ -14,6 +14,15 @@ type setClause struct {
 	Val any
 }
 
+var _ syntax.SqlFragment = setClause{}
+
+// AppendSQL implements syntax.SqlFragment, writing "col" = val into buf.
+func (s setClause) AppendSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
+	d.QuoteIdentifier(buf, s.Col)
+	buf.WriteString(" = ")
+	syntax.AppendValue(buf, d, s.Val)
+}
+
 // SqlUpdateBuilder constructs a SQL UPDATE statement using a fluent method chain.
 // Use a dialect-specific constructor (e.g. sqblpg.Update) to create an instance.
 //
@@ -68,9 +77,7 @@ func (b SqlUpdateBuilder) renderSQL(buf *bytes.Buffer, d dialect.SqlDialect) {
 			if i > 0 {
 				buf.WriteString(", ")
 			}
-			d.QuoteIdentifier(buf, s.Col)
-			buf.WriteString(" = ")
-			syntax.AppendValue(buf, d, s.Val)
+			s.AppendSQL(buf, d)
 		}
 	}
 

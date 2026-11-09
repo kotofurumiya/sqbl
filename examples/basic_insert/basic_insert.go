@@ -43,23 +43,24 @@ func main() {
 
 	// Upsert: ON CONFLICT DO UPDATE (update on duplicate key)
 	// INSERT INTO "settings" ("user_id", "key", "value") VALUES ($1, $2, $3)
-	// ON CONFLICT ("user_id", "key") DO UPDATE SET "value" = EXCLUDED."value";
+	// ON CONFLICT ("user_id", "key") DO UPDATE SET "value" = "excluded"."value";
 	sql5 := sqbl.InsertInto("settings").
 		Columns("user_id", "key", "value").
 		Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
-		OnConflict("user_id", "key").DoUpdate(`"value" = EXCLUDED."value"`).
+		OnConflict("user_id", "key").DoUpdateSet("value", "excluded.value").
 		ToSql()
 	fmt.Println(sql5)
 
 	// Upsert: conditional DO UPDATE (overwrite only with a newer version)
 	// INSERT INTO "users" ("id", "name", "version") VALUES ($1, $2, $3)
-	// ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name", "version" = excluded."version"
+	// ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name", "version" = "excluded"."version"
 	// WHERE "users"."version" < "excluded"."version";
 	sql6 := sqbl.InsertInto("users").
 		Columns("id", "name", "version").
 		Values(sqbl.P(1), sqbl.P(2), sqbl.P(3)).
 		OnConflict("id").
-		DoUpdate(`"name" = excluded."name"`, `"version" = excluded."version"`).
+		DoUpdateSet("name", "excluded.name").
+		DoUpdateSet("version", "excluded.version").
 		DoUpdateWhere(sqbl.Lt("users.version", "excluded.version")).
 		ToSql()
 	fmt.Println(sql6)

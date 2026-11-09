@@ -31,7 +31,8 @@ func RunUpsert_DoUpdateWhere(t testing.TB, conn Conn, s Suite) {
 		Columns("id", "name", "version").
 		Values(syntax.P(1), syntax.P(2), syntax.P(3)).
 		OnConflict("id").
-		DoUpdate(`"name" = excluded."name"`, `"version" = excluded."version"`).
+		DoUpdateSet("name", "excluded.name").
+		DoUpdateSet("version", "excluded.version").
 		DoUpdateWhere(syntax.Lt("it_upsert_versioned_users.version", "excluded.version")).
 		Returning("version").
 		ToSql()
