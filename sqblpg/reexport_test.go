@@ -31,6 +31,7 @@ func TestReexports(t *testing.T) {
 		{"Or", sqblpg.Or(sqblpg.Eq("a", 1), sqblpg.Eq("b", 2)), `"a" = 1 OR "b" = 2`},
 		{"Asc", sqblpg.Asc("a"), `"a" ASC`},
 		{"Desc", sqblpg.Desc("a"), `"a" DESC`},
+		{"Desc expression", sqblpg.Desc(sqblpg.Fn("LOWER", "a")), `LOWER("a") DESC`},
 		{"Not", sqblpg.Not(sqblpg.Eq("a", 1)), `NOT ("a" = 1)`},
 		{"In", sqblpg.In("a", 1, 2), `"a" IN (1, 2)`},
 		{"NotIn", sqblpg.NotIn("a", 1, 2), `"a" NOT IN (1, 2)`},

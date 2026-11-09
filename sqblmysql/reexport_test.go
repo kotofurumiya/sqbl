@@ -31,6 +31,7 @@ func TestReexports(t *testing.T) {
 		{"Or", sqblmysql.Or(sqblmysql.Eq("a", 1), sqblmysql.Eq("b", 2)), "`a` = 1 OR `b` = 2"},
 		{"Asc", sqblmysql.Asc("a"), "`a` ASC"},
 		{"Desc", sqblmysql.Desc("a"), "`a` DESC"},
+		{"Desc expression", sqblmysql.Desc(sqblmysql.Fn("LOWER", "a")), "LOWER(`a`) DESC"},
 		{"Not", sqblmysql.Not(sqblmysql.Eq("a", 1)), "NOT (`a` = 1)"},
 		{"In", sqblmysql.In("a", 1, 2), "`a` IN (1, 2)"},
 		{"NotIn", sqblmysql.NotIn("a", 1, 2), "`a` NOT IN (1, 2)"},

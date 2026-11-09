@@ -14,7 +14,7 @@ import (
 func main() {
 	// Step 1 (CTE): Aggregate total sales per rep for the target month.
 	//
-	// monthly_totals AS (
+	// "monthly_totals" AS (
 	//   SELECT "rep_id", "region", SUM("amount") AS "total"
 	//   FROM "sales"
 	//   WHERE "sold_at" >= $1 AND "sold_at" < $2
@@ -32,11 +32,11 @@ func main() {
 		)).
 		GroupBy("rep_id", "region")
 
-	// Step 2 (CTE): Rank reps within each region by their monthly total.
+	// Step 2 (CTE): Rank reps within each region by their monthly total, highest first.
 	//
-	// ranked AS (
+	// "ranked" AS (
 	//   SELECT "rep_id", "region", "total",
-	//     RANK() OVER (PARTITION BY "region" ORDER BY "total") AS "rank"
+	//     RANK() OVER (PARTITION BY "region" ORDER BY "total" DESC) AS "rank"
 	//   FROM "monthly_totals"
 	// )
 	ranked := sqbl.From("monthly_totals").
@@ -45,7 +45,7 @@ func main() {
 			"region",
 			"total",
 			sqbl.As(
-				sqbl.Over(sqbl.Fn("RANK")).PartitionBy("region").OrderBy("total"),
+				sqbl.Over(sqbl.Fn("RANK")).PartitionBy("region").OrderBy(sqbl.Desc("total")),
 				"rank",
 			),
 		)

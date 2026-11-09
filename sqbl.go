@@ -3,12 +3,16 @@
 //
 // The builders returned by this package have no dialect. Render them with
 // ToSQLWithDialect, which lets one builder produce SQL for several databases.
-// ToSQL panics on these builders; to render with ToSQL, start from a dialect
-// package such as sqblpg, sqblmysql, or sqblsqlite instead.
+// ToSQL returns an error on these builders; to render with ToSQL, start from a
+// dialect package such as sqblpg, sqblmysql, or sqblsqlite instead.
 //
 //	q := sqbl.From("users").Select("id").Where(sqbl.Eq("id", sqbl.P(1)))
-//	q.ToSQLWithDialect(&dialect.Postgres{}) // SELECT "id" FROM "users" WHERE "id" = $1
-//	q.ToSQLWithDialect(&dialect.SQLite{})   // SELECT "id" FROM "users" WHERE "id" = ?1
+//	q.MustSQLWithDialect(&dialect.Postgres{}) // SELECT "id" FROM "users" WHERE "id" = $1
+//	q.MustSQLWithDialect(&dialect.SQLite{})   // SELECT "id" FROM "users" WHERE "id" = ?1
+//
+// ToSQLWithDialect returns an error when the statement holds input that has no
+// safe SQL form; the Must variants panic instead. The helper examples in this
+// package show PostgreSQL output.
 package sqbl
 
 import "github.com/kotofurumiya/sqbl/builder"

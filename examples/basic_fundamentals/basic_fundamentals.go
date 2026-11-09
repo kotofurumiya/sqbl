@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	sqbl "github.com/kotofurumiya/sqbl/sqblpg"
 )
@@ -16,8 +17,16 @@ func main() {
 	// ---------------------------------------------------------------
 	// 1. SELECT * — retrieve every column
 	// ---------------------------------------------------------------
+	// ToSQL returns an error when a query holds input that has no safe SQL
+	// form, such as a value of an unsupported Go type. Handle it like any
+	// other error; the rest of this file uses MustSQL, which panics instead,
+	// because every query here is built from constants.
+	//
 	// SELECT * FROM "employees";
-	sql01 := sqbl.From("employees").MustSQL()
+	sql01, err := sqbl.From("employees").ToSQL()
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println(sql01)
 
 	// ---------------------------------------------------------------

@@ -67,13 +67,13 @@ func main() {
 
 	// Upsert: target a partial unique index
 	// INSERT INTO "users" ("email", "name") VALUES ($1, $2)
-	// ON CONFLICT ("email") WHERE "active" = 1 DO UPDATE SET "name" = excluded."name";
+	// ON CONFLICT ("email") WHERE "active" = TRUE DO UPDATE SET "name" = "excluded"."name";
 	sql7 := sqbl.InsertInto("users").
 		Columns("email", "name").
 		Values(sqbl.P(1), sqbl.P(2)).
 		OnConflict("email").
-		OnConflictWhere(sqbl.Eq("active", 1)).
-		DoUpdate(`"name" = excluded."name"`).
+		OnConflictWhere(sqbl.Eq("active", true)).
+		DoUpdateSet("name", "excluded.name").
 		MustSQL()
 	fmt.Println(sql7)
 }

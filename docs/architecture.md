@@ -3,7 +3,7 @@
 sqbl is structured in five layers, each with a distinct responsibility:
 
 - `sqbl` (root) — dialect-free entry points; depends on `builder` and `syntax`
-- `sqblpg` / `sqblmysql` / `sqblsqlite` — DB-specific entry points; depend on `builder` and `dialect`
+- `sqblpg` / `sqblmysql` / `sqblsqlite` — DB-specific entry points; depend on `builder`, `syntax` and `dialect`
 - `builder` — assembles and renders SQL statements; depends on `syntax` and `dialect`
 - `syntax` — SQL fragment types; depends on `dialect`
 - `dialect` — lexical differences (quoting, placeholders, booleans); no dependencies on other sqbl packages
@@ -24,7 +24,7 @@ type Dialect interface {
 }
 ```
 
-All methods write directly into a `*bytes.Buffer` to avoid intermediate string allocations. `Quote` handles a single segment; `QuoteIdentifier` splits on `.` and calls `Quote` on each part.
+All methods write directly into a `*bytes.Buffer` to avoid intermediate string allocations. `Quote` handles a single segment and escapes the quote character. `QuoteIdentifier` handles a dotted name; the built-in dialects pass it to the `QuoteIdentifierParts` helper, which quotes and escapes each part.
 
 Built-in implementations: `Postgres`, `MySQL`, `SQLite`.
 
@@ -59,9 +59,12 @@ Every argument that accepts an expression (`any`) follows one rule, implemented 
 - `SQLFragment` values render themselves.
 - Strings are identifiers. The content of a string is never inspected to decide whether it is an expression.
 - `bool` uses the dialect's boolean literal, and `nil` is `NULL`.
-- Anything else, such as a number, is formatted with `fmt.Sprint`.
+- Integer and floating-point kinds, including named numeric types, are numeric literals.
+- Anything else fails to render: a named string type, `time.Time`, `[]byte`, a pointer, NaN, and so on. Such values must be bound with `P`.
 
-`AppendValue` writes directly into the buffer. `ToFragment` returns a `SQLFragment` for builders that store expressions before rendering.
+`AppendValue` writes directly into the buffer. `ToFragment` returns a `SQLFragment` for builders that store expressions before rendering; a value it cannot render fails when the statement is rendered, not when the builder method is called.
+
+`AppendSQL` must not keep the buffer it receives, because builders take it from a pool.
 
 ---
 
@@ -71,20 +74,31 @@ Holds all query state and renders the final SQL string. All builders implement:
 
 ```go
 type Statement interface {
-    ToSQL() string
-    ToSQLWithDialect(d dialect.Dialect) string
+    ToSQL() (string, error)
+    ToSQLWithDialect(d dialect.Dialect) (string, error)
+    MustSQL() string
+    MustSQLWithDialect(d dialect.Dialect) string
 }
 ```
 
-`ToSQL()` renders with a trailing semicolon using the builder's own dialect. `ToSQLWithDialect(d)` renders without a semicolon using the given dialect.
+`ToSQL()` renders with a trailing semicolon using the builder's own dialect. `ToSQLWithDialect(d)` renders without a semicolon using the given dialect. The `Must` variants panic instead of returning an error.
 
-Both panic when there is no dialect to render with: `ToSQL()` on a builder without a dialect, or `ToSQLWithDialect(nil)`. A missing dialect is a programming error that shows up on the first render, so it is not reported through an error return on every call.
+Rendering fails, instead of producing broken SQL, when there is no dialect or when the statement holds input with no safe SQL form. Examples are an unsupported value type, an invalid placeholder, a join without an `ON` condition, or an incomplete upsert.
 
-`SelectBuilder` additionally implements `SQLFragment` via `AppendSQL`, which writes the query wrapped in parentheses. This is what makes it embeddable as a subquery in `From`, `Join`, and `In`.
+- `SQLFragment.AppendSQL` has no error result, so a fragment that hits such input aborts the render with an internal panic (`internal/sqlerr`).
+- The builder's render entry point recovers that panic and returns it as an error. Any other panic keeps propagating.
+- Custom fragments therefore need no error handling of their own.
+
+`SelectBuilder` and `CompoundBuilder` also implement `syntax.Subquery` via `AppendSQL`, which writes the query wrapped in parentheses. This is what makes them embeddable as a subquery in `From`, `Join`, and `In`. Together they form the `Query` interface, which CTEs, set operations and lateral joins accept.
+
+- `SelectBuilder` set-operation methods (`Union`, `Intersect`, `Except` and their `All` forms) return a `CompoundBuilder`.
+- `CompoundBuilder` has its own `OrderBy`, `Limit` and `Offset`, which apply to the combined rows. It parenthesizes operands where SQL would otherwise group them differently.
 
 State is accumulated independently of method call order and rendered at the end by a single `renderSQL` pass. `Select(...).From(...)` and `From(...).Select(...)` produce identical output.
 
-Builders: `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `CreateTableBuilder`, `CreateIndexBuilder`, `DropTableBuilder`, `DropIndexBuilder`, `AlterTableBuilder`, `CreateDatabaseBuilder`, `DropDatabaseBuilder`.
+Builders are values. Every method returns a modified copy and never shares mutable state with the builder it came from, so a base query can be extended in several directions.
+
+Builders: `SelectBuilder`, `CompoundBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `CreateTableBuilder`, `CreateIndexBuilder`, `DropTableBuilder`, `DropIndexBuilder`, `AlterTableBuilder`, `CreateDatabaseBuilder`, `DropDatabaseBuilder`.
 
 ---
 

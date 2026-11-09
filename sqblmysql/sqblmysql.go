@@ -1,5 +1,13 @@
 // Package sqblmysql provides MySQL-specific entry points for building SQL queries.
-// It wires the MySQL and re-exports syntax helpers for convenience.
+// It wires the MySQL dialect into every builder and re-exports the syntax helpers,
+// so one import covers a whole query.
+//
+// Render a statement with ToSQL, which returns an error when the statement holds
+// input that has no safe SQL form, such as a value of an unsupported Go type.
+// MustSQL panics instead, for statements built from constants.
+//
+//	sql, err := sqblmysql.From("users").Select("id").Where(sqblmysql.Eq("id", sqblmysql.P())).ToSQL()
+//	// SELECT `id` FROM `users` WHERE `id` = ?;
 package sqblmysql
 
 import (
@@ -16,7 +24,7 @@ func newSqblBuilder() builder.SelectBuilder {
 //
 //	sqblmysql.From("users")
 //	sqblmysql.From(sqblmysql.As("users", "u"))
-//	sqblmysql.From(sqblmysql.From("orders").Select("user_id"))
+//	sqblmysql.From(sqblmysql.As(sqblmysql.From("orders").Select("user_id"), "o"))
 func From(table any) builder.SelectBuilder {
 	return newSqblBuilder().From(table)
 }
@@ -32,7 +40,7 @@ func Select(columns ...any) builder.SelectBuilder {
 
 // InsertInto starts an INSERT query targeting the given table.
 //
-//	sqblmysql.InsertInto("users").Columns("name", "email").Values(sqbl.P(1), sqbl.P(2))
+//	sqblmysql.InsertInto("users").Columns("name", "email").Values(sqblmysql.P(), sqblmysql.P())
 func InsertInto(table string) builder.InsertBuilder {
 	var b builder.InsertBuilder
 	return b.Dialect(&dialect.MySQL{}).Into(table)
@@ -40,7 +48,7 @@ func InsertInto(table string) builder.InsertBuilder {
 
 // Update starts an UPDATE query targeting the given table.
 //
-//	sqblmysql.Update("users").Set("name", sqbl.P(1)).Where(sqblmysql.Eq("id", sqbl.P(2)))
+//	sqblmysql.Update("users").Set("name", sqblmysql.P()).Where(sqblmysql.Eq("id", sqblmysql.P()))
 func Update(table string) builder.UpdateBuilder {
 	var b builder.UpdateBuilder
 	return b.Dialect(&dialect.MySQL{}).Table(table)
@@ -48,7 +56,7 @@ func Update(table string) builder.UpdateBuilder {
 
 // DeleteFrom starts a DELETE query targeting the given table.
 //
-//	sqblmysql.DeleteFrom("users").Where(sqblmysql.Eq("id", sqbl.P(1)))
+//	sqblmysql.DeleteFrom("users").Where(sqblmysql.Eq("id", sqblmysql.P()))
 func DeleteFrom(table string) builder.DeleteBuilder {
 	var b builder.DeleteBuilder
 	return b.Dialect(&dialect.MySQL{}).From(table)

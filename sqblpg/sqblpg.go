@@ -1,5 +1,13 @@
 // Package sqblpg provides PostgreSQL-specific entry points for building SQL queries.
-// It wires the Postgres and re-exports syntax helpers for convenience.
+// It wires the PostgreSQL dialect into every builder and re-exports the syntax helpers,
+// so one import covers a whole query.
+//
+// Render a statement with ToSQL, which returns an error when the statement holds
+// input that has no safe SQL form, such as a value of an unsupported Go type.
+// MustSQL panics instead, for statements built from constants.
+//
+//	sql, err := sqblpg.From("users").Select("id").Where(sqblpg.Eq("id", sqblpg.P(1))).ToSQL()
+//	// SELECT "id" FROM "users" WHERE "id" = $1;
 package sqblpg
 
 import (
@@ -16,7 +24,7 @@ func newSqblBuilder() builder.SelectBuilder {
 //
 //	sqblpg.From("users")
 //	sqblpg.From(sqblpg.As("users", "u"))
-//	sqblpg.From(sqblpg.From("orders").Select("user_id"))
+//	sqblpg.From(sqblpg.As(sqblpg.From("orders").Select("user_id"), "o"))
 func From(table any) builder.SelectBuilder {
 	return newSqblBuilder().From(table)
 }
@@ -32,7 +40,7 @@ func Select(columns ...any) builder.SelectBuilder {
 
 // InsertInto starts an INSERT query targeting the given table.
 //
-//	sqblpg.InsertInto("users").Columns("name", "email").Values(sqbl.P(1), sqbl.P(2))
+//	sqblpg.InsertInto("users").Columns("name", "email").Values(sqblpg.P(1), sqblpg.P(2))
 func InsertInto(table string) builder.InsertBuilder {
 	var b builder.InsertBuilder
 	return b.Dialect(&dialect.Postgres{}).Into(table)
@@ -40,7 +48,7 @@ func InsertInto(table string) builder.InsertBuilder {
 
 // Update starts an UPDATE query targeting the given table.
 //
-//	sqblpg.Update("users").Set("name", sqbl.P(1)).Where(sqblpg.Eq("id", sqbl.P(2)))
+//	sqblpg.Update("users").Set("name", sqblpg.P(1)).Where(sqblpg.Eq("id", sqblpg.P(2)))
 func Update(table string) builder.UpdateBuilder {
 	var b builder.UpdateBuilder
 	return b.Dialect(&dialect.Postgres{}).Table(table)
@@ -48,7 +56,7 @@ func Update(table string) builder.UpdateBuilder {
 
 // DeleteFrom starts a DELETE query targeting the given table.
 //
-//	sqblpg.DeleteFrom("users").Where(sqblpg.Eq("id", sqbl.P(1)))
+//	sqblpg.DeleteFrom("users").Where(sqblpg.Eq("id", sqblpg.P(1)))
 func DeleteFrom(table string) builder.DeleteBuilder {
 	var b builder.DeleteBuilder
 	return b.Dialect(&dialect.Postgres{}).From(table)

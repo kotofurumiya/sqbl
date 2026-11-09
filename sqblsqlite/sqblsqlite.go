@@ -1,5 +1,13 @@
 // Package sqblsqlite provides SQLite-specific entry points for building SQL queries.
-// It wires the SQLite and re-exports syntax helpers for convenience.
+// It wires the SQLite dialect into every builder and re-exports the syntax helpers,
+// so one import covers a whole query.
+//
+// Render a statement with ToSQL, which returns an error when the statement holds
+// input that has no safe SQL form, such as a value of an unsupported Go type.
+// MustSQL panics instead, for statements built from constants.
+//
+//	sql, err := sqblsqlite.From("users").Select("id").Where(sqblsqlite.Eq("id", sqblsqlite.P(1))).ToSQL()
+//	// SELECT "id" FROM "users" WHERE "id" = ?1;
 package sqblsqlite
 
 import (
@@ -16,7 +24,7 @@ func newSqblBuilder() builder.SelectBuilder {
 //
 //	sqblsqlite.From("users")
 //	sqblsqlite.From(sqblsqlite.As("users", "u"))
-//	sqblsqlite.From(sqblsqlite.From("orders").Select("user_id"))
+//	sqblsqlite.From(sqblsqlite.As(sqblsqlite.From("orders").Select("user_id"), "o"))
 func From(table any) builder.SelectBuilder {
 	return newSqblBuilder().From(table)
 }
@@ -32,7 +40,7 @@ func Select(columns ...any) builder.SelectBuilder {
 
 // InsertInto starts an INSERT query targeting the given table.
 //
-//	sqblsqlite.InsertInto("users").Columns("name", "email").Values(sqbl.P(1), sqbl.P(2))
+//	sqblsqlite.InsertInto("users").Columns("name", "email").Values(sqblsqlite.P(1), sqblsqlite.P(2))
 func InsertInto(table string) builder.InsertBuilder {
 	var b builder.InsertBuilder
 	return b.Dialect(&dialect.SQLite{}).Into(table)
@@ -40,7 +48,7 @@ func InsertInto(table string) builder.InsertBuilder {
 
 // Update starts an UPDATE query targeting the given table.
 //
-//	sqblsqlite.Update("users").Set("name", sqbl.P(1)).Where(sqblsqlite.Eq("id", sqbl.P(2)))
+//	sqblsqlite.Update("users").Set("name", sqblsqlite.P(1)).Where(sqblsqlite.Eq("id", sqblsqlite.P(2)))
 func Update(table string) builder.UpdateBuilder {
 	var b builder.UpdateBuilder
 	return b.Dialect(&dialect.SQLite{}).Table(table)
@@ -48,7 +56,7 @@ func Update(table string) builder.UpdateBuilder {
 
 // DeleteFrom starts a DELETE query targeting the given table.
 //
-//	sqblsqlite.DeleteFrom("users").Where(sqblsqlite.Eq("id", sqbl.P(1)))
+//	sqblsqlite.DeleteFrom("users").Where(sqblsqlite.Eq("id", sqblsqlite.P(1)))
 func DeleteFrom(table string) builder.DeleteBuilder {
 	var b builder.DeleteBuilder
 	return b.Dialect(&dialect.SQLite{}).From(table)
